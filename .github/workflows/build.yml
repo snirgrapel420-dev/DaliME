@@ -1,0 +1,58 @@
+name: Build plugin
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  engine-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Engine unit test
+        run: g++ -std=c++17 -O2 tests/engine_test.cpp Source/Engine.cpp -o engine_test && ./engine_test
+
+  build:
+    needs: engine-test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: Windows
+          - os: macos-14
+            label: macOS
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" == "macOS" ]; then
+            cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+          else
+            cmake -B build
+          fi
+
+      - name: Build
+        run: cmake --build build --config Release --parallel 4
+
+      - name: Ad-hoc sign (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          cd "build/GoaMelodyEngine_artefacts/Release"
+          codesign --force --deep -s - "VST3/Goa Melody Engine.vst3"
+          codesign --force --deep -s - "AU/Goa Melody Engine.component"
+          codesign --force --deep -s - "Standalone/Goa Melody Engine.app"
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: GoaMelodyEngine-${{ matrix.label }}
+          path: |
+            build/GoaMelodyEngine_artefacts/Release/VST3
+            build/GoaMelodyEngine_artefacts/Release/AU
+            build/GoaMelodyEngine_artefacts/Release/Standalone
+          if-no-files-found: warn
