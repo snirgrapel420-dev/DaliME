@@ -15,8 +15,8 @@ FetchContent_Declare(JUCE
 FetchContent_MakeAvailable(JUCE)
 
 juce_add_plugin(GoaMelodyEngine
-  COMPANY_NAME "GoaLab"
-  PRODUCT_NAME "Goa Melody Engine"
+  COMPANY_NAME "Dali Audio"
+  PRODUCT_NAME "DaliME"
   PLUGIN_MANUFACTURER_CODE Goal
   PLUGIN_CODE GmE1
   FORMATS VST3 AU Standalone
