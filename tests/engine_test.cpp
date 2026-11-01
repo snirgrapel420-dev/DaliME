@@ -4,7 +4,7 @@
 #include <cstdio>
 #include <string>
 
-using namespace goa;
+using namespace dali;
 
 static int fails = 0;
 #define CHECK(cond, msg) do { if (!(cond)) { ++fails; if (fails < 20) std::printf ("FAIL: %s (%s)\n", msg, ctx.c_str()); } } while (0)
@@ -25,8 +25,25 @@ static void checkPattern (const Pattern& p, const std::string& ctx)
     CHECK (any, "has notes");
 }
 
+static void checkGrooves()
+{
+    // every shape x family x grid must produce playable patterns, and the family names must line up
+    const std::string ctx = "names";
+    CHECK (grooveFamilyNames().size() == 9, "groove names");
+    CHECK (hookShapeNames().size() == 9, "hook names");
+    for (int fam = 0; fam <= 8; ++fam)
+        for (int spb : { 8, 12, 16, 24 })
+            for (int mode = 0; mode < 5; ++mode)
+            {
+                Params p; p.mode = (Mode) mode; p.groove = fam; p.spb = spb; p.bars = 2;
+                const std::string ctx2 = "groove " + std::to_string (fam) + " spb " + std::to_string (spb);
+                for (uint32_t s = 1; s <= 6; ++s) checkPattern (generate (p, s * 7919), ctx2);
+            }
+}
+
 int main()
 {
+    checkGrooves();
     std::vector<std::string> scales;
     for (auto& g : scaleGroups()) for (auto& s : g.scales) scales.push_back (s.first);
     scales.push_back ("Custom");
@@ -36,12 +53,15 @@ int main()
         for (int hs : { 0, mode == 4 ? 3 : 0 })
         for (auto& style : styleNames())
             for (int bars : { 1, 2, 4, 8, 16 })
-                for (int spb : { 16, 24, 8 })
+                for (int spbSel : { 16, 24, 8, 12, 99 })
                     for (double w : { 0.0, 0.6, 1.0 })
-                        for (auto& sc : scales)
+                        for (size_t si = (size_t) (meta.next() * 5); si < scales.size(); si += 5)
                         {
+                            const std::string& sc = scales[si];
+                            const int spb = spbSel == 99 ? 16 : spbSel;
                             Params p;
-                            p.mode = (Mode) mode; p.hookShape = mode == 4 ? (hs ? (int) (meta.next() * 5) + 1 : 0) : 0; p.style = style; p.bars = bars; p.spb = spb; p.weird = w; p.scale = sc;
+                            p.mixed = spbSel == 99; p.groove = meta.chance (.4) ? (int) (meta.next() * 8) + 1 : 0;
+                            p.mode = (Mode) mode; p.hookShape = mode == 4 ? (hs ? (int) (meta.next() * 8) + 1 : 0) : 0; p.style = style; p.bars = bars; p.spb = spb; p.weird = w; p.scale = sc;
                             p.density = meta.next(); p.movement = meta.next(); p.reg = meta.next();
                             if (meta.chance (.2)) p.chords = "";
                             const std::string ctx = std::to_string (mode) + " " + style + " " + sc + " bars=" + std::to_string (bars);
@@ -68,7 +88,7 @@ int main()
         for (int arch = 0; arch <= 6; ++arch)
         {
             const std::string ctx = "set mode " + std::to_string (mode) + " arch " + std::to_string (arch);
-            Params p; p.mode = (Mode) mode; p.archetype = arch; p.bars = 4;
+            Params p; p.mode = (Mode) mode; p.archetype = arch; p.bars = 4; p.mixed = arch == 3;
             const auto set = generateSet (p, 8, meta.u32());
             CHECK (set.size() == 8, "set size");
             for (auto& g : set) checkPattern (g, ctx);
