@@ -72,12 +72,12 @@ void MonoSynth::render (float* L, float* R, int n, float gain)
 }
 
 // ================= Processor =================
-GoaProcessor::GoaProcessor()
+DaliProcessor::DaliProcessor()
     : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true))
 {
     {
-        auto first = goa::generateSet (params, 8, newSeed());
-        for (size_t i = 0; i < 8; ++i) slots[i] = std::make_shared<const goa::Pattern> (std::move (first[i]));
+        auto first = dali::generateSet (params, 8, newSeed());
+        for (size_t i = 0; i < 8; ++i) slots[i] = std::make_shared<const dali::Pattern> (std::move (first[i]));
     }
     publish();
     pending.reserve (256);
@@ -85,7 +85,7 @@ GoaProcessor::GoaProcessor()
     startTimerHz (2);
 }
 
-GoaProcessor::~GoaProcessor()
+DaliProcessor::~DaliProcessor()
 {
     stopTimer();
     const juce::SpinLock::ScopedLockType sl (outLock);
@@ -93,7 +93,7 @@ GoaProcessor::~GoaProcessor()
     extOut.reset();
 }
 
-juce::StringArray GoaProcessor::availableMidiOuts() const
+juce::StringArray DaliProcessor::availableMidiOuts() const
 {
     juce::StringArray names;
    #if JUCE_MAC || JUCE_LINUX
@@ -103,13 +103,13 @@ juce::StringArray GoaProcessor::availableMidiOuts() const
     return names;
 }
 
-void GoaProcessor::setMidiOut (const juce::String& name)
+void DaliProcessor::setMidiOut (const juce::String& name)
 {
     std::unique_ptr<juce::MidiOutput> dev;
     if (name.isNotEmpty())
     {
        #if JUCE_MAC || JUCE_LINUX
-        if (name == virtualPortName()) dev = juce::MidiOutput::createNewDevice ("Goa Melody Engine");
+        if (name == virtualPortName()) dev = juce::MidiOutput::createNewDevice ("DaliME");
        #endif
         if (dev == nullptr)
             for (auto& d : juce::MidiOutput::getAvailableDevices())
@@ -126,7 +126,7 @@ void GoaProcessor::setMidiOut (const juce::String& name)
     ++modelVersion;
 }
 
-void GoaProcessor::sendExternal (const juce::MidiBuffer& midi)
+void DaliProcessor::sendExternal (const juce::MidiBuffer& midi)
 {
     if (midi.isEmpty()) return;
     const juce::SpinLock::ScopedTryLockType sl (outLock);
@@ -134,18 +134,18 @@ void GoaProcessor::sendExternal (const juce::MidiBuffer& midi)
         extOut->sendBlockOfMessages (midi, juce::Time::getMillisecondCounterHiRes(), sampleRate);
 }
 
-void GoaProcessor::startListening()
+void DaliProcessor::startListening()
 {
     if (! hostIsPlaying.load()) { enabled = true; internalPlay = true; }
 }
 
-bool GoaProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
+bool DaliProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
     const auto out = layouts.getMainOutputChannelSet();
     return out == juce::AudioChannelSet::mono() || out == juce::AudioChannelSet::stereo();
 }
 
-void GoaProcessor::prepareToPlay (double sr, int)
+void DaliProcessor::prepareToPlay (double sr, int)
 {
     sampleRate = sr;
     synth.prepare (sr);
@@ -153,7 +153,7 @@ void GoaProcessor::prepareToPlay (double sr, int)
     wasRunning = false;
 }
 
-void GoaProcessor::flushAll (juce::MidiBuffer& midi, int sample)
+void DaliProcessor::flushAll (juce::MidiBuffer& midi, int sample)
 {
     for (auto& p : pending) midi.addEvent (juce::MidiMessage::noteOff (1, p.note), sample);
     midi.addEvent (juce::MidiMessage::allNotesOff (1), sample);
@@ -163,7 +163,7 @@ void GoaProcessor::flushAll (juce::MidiBuffer& midi, int sample)
     prevNote = -1;
 }
 
-void GoaProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
+void DaliProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
     juce::ScopedNoDenormals noDenormals;
     const int n = buffer.getNumSamples();
@@ -204,7 +204,7 @@ void GoaProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuf
     }
     else wasInternal = false;
 
-    synth.acid = pat != nullptr && pat->mode == goa::Mode::Acid;
+    synth.acid = pat != nullptr && pat->mode == dali::Mode::Acid;
     auto* L = buffer.getWritePointer (0);
     auto* R = buffer.getNumChannels() > 1 ? buffer.getWritePointer (1) : nullptr;
     const bool preview = previewOn.load();
@@ -325,25 +325,25 @@ void GoaProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuf
 }
 
 // ================= model =================
-void GoaProcessor::publish()
+void DaliProcessor::publish()
 {
     auto old = std::atomic_load (&live);
     if (old != nullptr) retired.push_back (old);
     std::atomic_store (&live, slots[(size_t) sel]);
 }
 
-void GoaProcessor::timerCallback()
+void DaliProcessor::timerCallback()
 {
     retired.erase (std::remove_if (retired.begin(), retired.end(), [] (const PatternPtr& p) { return p.use_count() == 1; }), retired.end());
 }
 
-void GoaProcessor::pushHistory()
+void DaliProcessor::pushHistory()
 {
     history.push_back ({ slots, keep, sel });
     if (history.size() > 40) history.erase (history.begin());
 }
 
-bool GoaProcessor::undo()
+bool DaliProcessor::undo()
 {
     if (history.empty()) { lastMessage = "Nothing to undo."; ++modelVersion; return false; }
     const auto s = history.back();
@@ -355,30 +355,30 @@ bool GoaProcessor::undo()
     return true;
 }
 
-int GoaProcessor::keptCount() const
+int DaliProcessor::keptCount() const
 {
     int c = 0;
     for (bool k : keep) c += k ? 1 : 0;
     return c;
 }
 
-void GoaProcessor::generateAll()
+void DaliProcessor::generateAll()
 {
     std::vector<int> freeSlots;
     for (int i = 0; i < 8; ++i) if (! keep[(size_t) i]) freeSlots.push_back (i);
     if (freeSlots.empty()) { lastMessage = "All eight are kept. Unkeep one to make room."; ++modelVersion; return; }
     pushHistory();
-    std::vector<const goa::Pattern*> kept;
+    std::vector<const dali::Pattern*> kept;
     for (int i = 0; i < 8; ++i) if (keep[(size_t) i]) kept.push_back (slots[(size_t) i].get());
-    auto fresh = goa::generateSet (params, (int) freeSlots.size(), newSeed(), kept);
-    for (size_t k = 0; k < freeSlots.size(); ++k) slots[(size_t) freeSlots[k]] = std::make_shared<const goa::Pattern> (std::move (fresh[k]));
+    auto fresh = dali::generateSet (params, (int) freeSlots.size(), newSeed(), kept);
+    for (size_t k = 0; k < freeSlots.size(); ++k) slots[(size_t) freeSlots[k]] = std::make_shared<const dali::Pattern> (std::move (fresh[k]));
     if (keep[(size_t) sel]) sel = freeSlots.front();
     publish();
     lastMessage = {};
     ++modelVersion;
 }
 
-void GoaProcessor::mutateAction()
+void DaliProcessor::mutateAction()
 {
     std::vector<int> kept, freeSlots;
     for (int i = 0; i < 8; ++i) (keep[(size_t) i] ? kept : freeSlots).push_back (i);
@@ -386,9 +386,9 @@ void GoaProcessor::mutateAction()
     if (kept.empty())
     {
         pushHistory();
-        auto m = goa::mutate (*slots[(size_t) sel], amount, params, newSeed());
+        auto m = dali::mutate (*slots[(size_t) sel], amount, params, newSeed());
         m.origin = std::string (1, LETTERS[sel]) + " mutated " + std::to_string (pct) + "%";
-        slots[(size_t) sel] = std::make_shared<const goa::Pattern> (std::move (m));
+        slots[(size_t) sel] = std::make_shared<const dali::Pattern> (std::move (m));
     }
     else
     {
@@ -397,9 +397,9 @@ void GoaProcessor::mutateAction()
         for (size_t k = 0; k < freeSlots.size(); ++k)
         {
             const int si = kept[k % kept.size()];
-            auto m = goa::mutate (*slots[(size_t) si], amount, params, newSeed());
+            auto m = dali::mutate (*slots[(size_t) si], amount, params, newSeed());
             m.origin = amount >= 1.0 ? std::string ("New") : "From " + std::string (1, LETTERS[si]) + ", " + std::to_string (pct) + "%";
-            slots[(size_t) freeSlots[k]] = std::make_shared<const goa::Pattern> (std::move (m));
+            slots[(size_t) freeSlots[k]] = std::make_shared<const dali::Pattern> (std::move (m));
         }
         if (! keep[(size_t) sel] && std::find (freeSlots.begin(), freeSlots.end(), sel) == freeSlots.end()) sel = freeSlots.front();
     }
@@ -408,24 +408,24 @@ void GoaProcessor::mutateAction()
     ++modelVersion;
 }
 
-void GoaProcessor::generateSimilar()
+void DaliProcessor::generateSimilar()
 {
     if (dna == nullptr) return;
     std::vector<int> freeSlots;
     for (int i = 0; i < 8; ++i) if (! keep[(size_t) i]) freeSlots.push_back (i);
     if (freeSlots.empty()) { lastMessage = "All eight are kept. Unkeep one to make room."; ++modelVersion; return; }
     const auto& d = *dna;
-    params.mode = goa::Mode::Melody; params.root = d.root; params.scale = d.scale; params.density = d.density;
+    params.mode = dali::Mode::Melody; params.root = d.root; params.scale = d.scale; params.density = d.density;
     params.movement = d.movement; params.reg = d.reg; params.weird = juce::jlimit (0.0, 0.6, d.chromatic * 1.6);
     params.bars = d.bars; params.spb = 16;
     pushHistory();
-    goa::Rng r (newSeed());
+    dali::Rng r (newSeed());
     for (int i : freeSlots)
     {
-        const auto m = goa::dnaMotif (d, r);
-        auto p = goa::generateBest (params, newSeed(), 4, &m, &d.style, &d.rhythms);
+        const auto m = dali::dnaMotif (d, r);
+        auto p = dali::generateBest (params, newSeed(), 4, &m, &d.style, &d.rhythms);
         p.origin = "Similar to " + dnaName.upToLastOccurrenceOf (".", false, false).toStdString();
-        slots[(size_t) i] = std::make_shared<const goa::Pattern> (std::move (p));
+        slots[(size_t) i] = std::make_shared<const dali::Pattern> (std::move (p));
     }
     if (keep[(size_t) sel]) sel = freeSlots.front();
     publish();
@@ -433,57 +433,57 @@ void GoaProcessor::generateSimilar()
     ++modelVersion;
 }
 
-void GoaProcessor::select (int i)
+void DaliProcessor::select (int i)
 {
     sel = juce::jlimit (0, 7, i);
     publish();
     ++modelVersion;
 }
 
-void GoaProcessor::toggleKeep (int i)
+void DaliProcessor::toggleKeep (int i)
 {
     keep[(size_t) i] = ! keep[(size_t) i];
     ++modelVersion;
 }
 
-void GoaProcessor::replaceSelected (goa::Pattern edited)
+void DaliProcessor::replaceSelected (dali::Pattern edited)
 {
     pushHistory();
-    goa::fixSlides (edited.steps);
+    dali::fixSlides (edited.steps);
     if (edited.origin.size() < 7 || edited.origin.substr (edited.origin.size() - 6) != "edited")
         edited.origin = edited.origin.empty() ? std::string ("Edited") : edited.origin + ", edited";
-    slots[(size_t) sel] = std::make_shared<const goa::Pattern> (std::move (edited));
+    slots[(size_t) sel] = std::make_shared<const dali::Pattern> (std::move (edited));
     publish();
     ++modelVersion;
 }
 
-void GoaProcessor::loadDna (const juce::File& f)
+void DaliProcessor::loadDna (const juce::File& f)
 {
     juce::MemoryBlock mb;
     if (! f.loadFileAsData (mb)) { lastMessage = "Could not open " + f.getFileName(); ++modelVersion; return; }
     std::vector<uint8_t> bytes ((const uint8_t*) mb.getData(), (const uint8_t*) mb.getData() + mb.getSize());
-    auto d = std::make_unique<goa::Dna>();
+    auto d = std::make_unique<dali::Dna>();
     std::string err;
-    if (! goa::analyzeMidiFile (bytes, *d, err)) { lastMessage = juce::String (err); ++modelVersion; return; }
+    if (! dali::analyzeMidiFile (bytes, *d, err)) { lastMessage = juce::String (err); ++modelVersion; return; }
     dna = std::move (d);
     dnaName = f.getFileName();
     lastMessage = "DNA read from " + dnaName;
     ++modelVersion;
 }
 
-std::vector<uint8_t> GoaProcessor::midiFor (int slot) const
+std::vector<uint8_t> DaliProcessor::midiFor (int slot) const
 {
     const double bpm = hostBpm.load() > 0 ? hostBpm.load() : internalBpm.load();
-    return goa::toMidiFile (*slots[(size_t) slot], bpm, "Goa " + std::string (1, LETTERS[slot]));
+    return dali::toMidiFile (*slots[(size_t) slot], bpm, "DaliME " + std::string (1, LETTERS[slot]));
 }
 
-juce::String GoaProcessor::fileBaseFor (int slot) const
+juce::String DaliProcessor::fileBaseFor (int slot) const
 {
     const auto& gp = slots[(size_t) slot]->params;
     static const char* modes[] = { "melody", "acid", "arp", "chords", "hook" };
     juce::String scale (gp.scale);
     scale = scale.retainCharacters ("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789");
-    return "Goa_" + juce::String::charToString (LETTERS[slot]) + "_" + juce::String (goa::NOTE_NAMES[gp.root]).replace ("#", "s")
+    return "DaliME_" + juce::String::charToString (LETTERS[slot]) + "_" + juce::String (dali::NOTE_NAMES[gp.root]).replace ("#", "s")
            + "-" + scale + "_" + modes[(int) slots[(size_t) slot]->mode];
 }
 
@@ -499,10 +499,10 @@ static std::string getString (const juce::ValueTree& t, const juce::Identifier& 
     return v.toString().toStdString();
 }
 
-void GoaProcessor::getStateInformation (juce::MemoryBlock& dest)
+void DaliProcessor::getStateInformation (juce::MemoryBlock& dest)
 {
-    juce::ValueTree t ("GoaState");
-    putString (t, "params", goa::serializeParams (params));
+    juce::ValueTree t ("DaliState");
+    putString (t, "params", dali::serializeParams (params));
     t.setProperty ("sel", sel, nullptr);
     t.setProperty ("amount", amount, nullptr);
     int mask = 0;
@@ -514,22 +514,22 @@ void GoaProcessor::getStateInformation (juce::MemoryBlock& dest)
     t.setProperty ("bpm", internalBpm.load(), nullptr);
     t.setProperty ("midiOut", midiOutName, nullptr);
     t.setProperty ("enabled", enabled.load(), nullptr);
-    for (int i = 0; i < 8; ++i) putString (t, juce::Identifier ("slot" + juce::String (i)), goa::serialize (*slots[(size_t) i]));
+    for (int i = 0; i < 8; ++i) putString (t, juce::Identifier ("slot" + juce::String (i)), dali::serialize (*slots[(size_t) i]));
     if (auto xml = t.createXml()) copyXmlToBinary (*xml, dest);
 }
 
-void GoaProcessor::setStateInformation (const void* data, int size)
+void DaliProcessor::setStateInformation (const void* data, int size)
 {
     auto xml = getXmlFromBinary (data, size);
     if (xml == nullptr) return;
     const auto t = juce::ValueTree::fromXml (*xml);
-    if (! t.hasType ("GoaState")) return;
-    goa::deserializeParams (getString (t, "params"), params);
+    if (! t.hasType ("DaliState")) return;
+    dali::deserializeParams (getString (t, "params"), params);
     for (int i = 0; i < 8; ++i)
     {
-        goa::Pattern p;
-        if (goa::deserialize (getString (t, juce::Identifier ("slot" + juce::String (i))), p))
-            slots[(size_t) i] = std::make_shared<const goa::Pattern> (std::move (p));
+        dali::Pattern p;
+        if (dali::deserialize (getString (t, juce::Identifier ("slot" + juce::String (i))), p))
+            slots[(size_t) i] = std::make_shared<const dali::Pattern> (std::move (p));
     }
     const int mask = (int) t.getProperty ("keep", 0);
     for (int i = 0; i < 8; ++i) keep[(size_t) i] = (mask >> i) & 1;
@@ -547,6 +547,6 @@ void GoaProcessor::setStateInformation (const void* data, int size)
     ++modelVersion;
 }
 
-juce::AudioProcessorEditor* GoaProcessor::createEditor() { return new GoaEditor (*this); }
+juce::AudioProcessorEditor* DaliProcessor::createEditor() { return new DaliEditor (*this); }
 
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new GoaProcessor(); }
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new DaliProcessor(); }

@@ -23,11 +23,11 @@ private:
     int current = -1;
 };
 
-class GoaProcessor : public juce::AudioProcessor, private juce::Timer
+class DaliProcessor : public juce::AudioProcessor, private juce::Timer
 {
 public:
-    GoaProcessor();
-    ~GoaProcessor() override;
+    DaliProcessor();
+    ~DaliProcessor() override;
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
     void releaseResources() override {}
@@ -50,13 +50,13 @@ public:
     void setStateInformation (const void*, int) override;
 
     // ---------- model (message thread only) ----------
-    using PatternPtr = std::shared_ptr<const goa::Pattern>;
-    goa::Params params;
+    using PatternPtr = std::shared_ptr<const dali::Pattern>;
+    dali::Params params;
     std::array<PatternPtr, 8> slots;
     std::array<bool, 8> keep {};
     int sel = 0;
     double amount = 0.3;
-    std::unique_ptr<goa::Dna> dna;
+    std::unique_ptr<dali::Dna> dna;
     juce::String dnaName;
 
     void generateAll();
@@ -65,7 +65,7 @@ public:
     bool undo();
     void select (int i);
     void toggleKeep (int i);
-    void replaceSelected (goa::Pattern edited); // step edits from the editor
+    void replaceSelected (dali::Pattern edited); // step edits from the editor
     void loadDna (const juce::File&);
     std::vector<uint8_t> midiFor (int slot) const;
     juce::String fileBaseFor (int slot) const;
@@ -74,7 +74,7 @@ public:
 
     // Direct MIDI out to a port (loopMIDI on Windows, IAC / virtual port on Mac).
     // Needed for Ableton, which does not route MIDI coming out of VST3 plugins to other tracks.
-    static juce::String virtualPortName() { return "Goa Melody Engine (virtual port)"; }
+    static juce::String virtualPortName() { return "DaliME (virtual port)"; }
     juce::StringArray availableMidiOuts() const;
     void setMidiOut (const juce::String& name); // empty = off
     juce::String midiOutName;
@@ -120,5 +120,5 @@ private:
     juce::SpinLock outLock;
     std::unique_ptr<juce::MidiOutput> extOut;
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GoaProcessor)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DaliProcessor)
 };

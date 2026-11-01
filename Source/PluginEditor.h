@@ -3,36 +3,36 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "PluginProcessor.h"
 
-namespace GoaColours
+namespace DaliColours
 {
 const juce::Colour bg { 0xff150c2b }, panel { 0xff1b113a }, panel2 { 0xff22164a }, line { 0xff35255e }, ink { 0xfff0eaff },
     dim { 0xffa294cc }, mag { 0xffff4fd8 }, cyan { 0xff43f0ff }, uv { 0xffb173ff }, roll { 0xff0f0822 };
 }
 
-class GoaLookAndFeel : public juce::LookAndFeel_V4
+class DaliLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
-    GoaLookAndFeel();
+    DaliLookAndFeel();
 };
 
 class SlotView : public juce::Component, public juce::SettableTooltipClient
 {
 public:
-    SlotView (GoaProcessor& p, int index) : proc (p), idx (index) {}
+    SlotView (DaliProcessor& p, int index) : proc (p), idx (index) {}
     void paint (juce::Graphics&) override;
     void mouseUp (const juce::MouseEvent&) override;
     std::function<void()> onChange;
 
 private:
     juce::Rectangle<float> heartArea() const;
-    GoaProcessor& proc;
+    DaliProcessor& proc;
     int idx;
 };
 
 class BigRoll : public juce::Component, public juce::SettableTooltipClient
 {
 public:
-    explicit BigRoll (GoaProcessor& p) : proc (p) {}
+    explicit BigRoll (DaliProcessor& p) : proc (p) {}
     void paint (juce::Graphics&) override;
     void mouseDown (const juce::MouseEvent&) override;
     void setPlayIdx (int i) { if (i != playIdx) { playIdx = i; repaint(); } }
@@ -40,28 +40,28 @@ public:
     static constexpr int laneH = 18, lanes = 3;
 
 private:
-    GoaProcessor& proc;
+    DaliProcessor& proc;
     int playIdx = -1;
 };
 
 class MidiDragSource : public juce::Component, public juce::SettableTooltipClient
 {
 public:
-    explicit MidiDragSource (GoaProcessor& p) : proc (p) { setMouseCursor (juce::MouseCursor::DraggingHandCursor); }
+    explicit MidiDragSource (DaliProcessor& p) : proc (p) { setMouseCursor (juce::MouseCursor::DraggingHandCursor); }
     void paint (juce::Graphics&) override;
     void mouseDrag (const juce::MouseEvent&) override;
     void mouseUp (const juce::MouseEvent&) override { dragging = false; }
 
 private:
-    GoaProcessor& proc;
+    DaliProcessor& proc;
     bool dragging = false;
 };
 
-class GoaEditor : public juce::AudioProcessorEditor, private juce::Timer
+class DaliEditor : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:
-    explicit GoaEditor (GoaProcessor&);
-    ~GoaEditor() override;
+    explicit DaliEditor (DaliProcessor&);
+    ~DaliEditor() override;
     void paint (juce::Graphics&) override;
     void resized() override;
 
@@ -73,8 +73,8 @@ private:
     void editStep (int step, int lane, int value);
     juce::Label& makeLabel (juce::Label&, const juce::String&, bool dimText = true);
 
-    GoaProcessor& proc;
-    GoaLookAndFeel lnf;
+    DaliProcessor& proc;
+    DaliLookAndFeel lnf;
 
     // left column
     juce::Label title, modeL, modeHelp, rootL, scaleL, scaleNotes, styleL, styleHelp, chordsL, barsL, rateL;
@@ -85,11 +85,12 @@ private:
     juce::TextEditor chordsEd;
     juce::Label hookL, hookHelp, riffL, riffHelp, bpmInfo;
     juce::ComboBox riffBox;
-    juce::ComboBox hookBox;
+    juce::ComboBox hookBox, grooveBox;
+    juce::Label subtitle, grooveL, grooveHelp;
     struct Knob { juce::Label name, value, help; juce::Slider slider; };
     std::array<Knob, 4> knobs;
     std::array<juce::TextButton, 5> barBtns;
-    std::array<juce::TextButton, 3> rateBtns;
+    std::array<juce::TextButton, 5> rateBtns;
 
     // right column
     juce::Label gridHint;
@@ -116,5 +117,5 @@ private:
     int seenVersion = -1;
     bool lastCustomVisible = false, lastChordsVisible = false, lastHookVisible = false, lastRiffVisible = true;
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GoaEditor)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DaliEditor)
 };

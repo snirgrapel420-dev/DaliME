@@ -1,4 +1,4 @@
-// Goa Melody Engine - core generator. Pure C++17, no JUCE dependency, so it can be unit tested alone.
+// DaliME (Dali Audio) - core MIDI generator. Pure C++17, no JUCE dependency, so it can be unit tested alone.
 #pragma once
 #include <array>
 #include <cstdint>
@@ -6,7 +6,7 @@
 #include <utility>
 #include <vector>
 
-namespace goa
+namespace dali
 {
 struct Rng
 {
@@ -29,10 +29,13 @@ struct Params
     std::string style = "Goa Melody";
     double density = 0.7, movement = 0.4, reg = 0.55, weird = 0.0;
     int bars = 2;
-    int spb = 16; // steps per bar: 16 = 1/16, 24 = 1/16T, 8 = 1/8
+    int spb = 16; // steps per bar: 16 = 1/16, 24 = 1/16T, 8 = 1/8, 12 = 1/8T
+    bool mixed = false; // with spb 16: 16ths and 8ths mixed, so note lengths vary
     std::string chords = "Gm Eb F Dm";
     int hookShape = 0; // 0 = Auto, 1..5 = see hookShapeNames()
     int archetype = 0; // riff type, 0 = Auto mix, 1..6 = see riffTypeNames()
+    int groove = 0; // rhythm feel, 0 = Auto mix, 1..8 = see grooveFamilyNames()
+    int grooveId = -1; // groove that was actually used (info / mutation)
 };
 
 struct Step
@@ -41,6 +44,7 @@ struct Step
     int note = 60, vel = 100;
     double len = 0.6; // gate, in steps (>1 = tied / sliding into the next step)
     bool acc = false, slide = false, pedal = false, hold = false;
+    char kind = 'x'; // generator hint only (not saved): x note, X accent, L long, s staccato
 };
 
 struct StyleProfile
@@ -50,6 +54,7 @@ struct StyleProfile
     double rests, sync, octJump, acc, slide;
     std::string cells;
     double regShift = 0.0;
+    double gate = 0.7; // typical note length vs. the gap to the next note
 };
 
 struct Pattern
@@ -78,6 +83,7 @@ const std::vector<ScaleGroup>& scaleGroups();
 const std::vector<int>* findScale (const std::string& name);
 std::vector<std::string> styleNames();
 std::vector<std::string> hookShapeNames(); // index 0 = Auto
+std::vector<std::string> grooveFamilyNames(); // index 0 = Auto
 std::vector<std::string> riffTypeNames();  // index 0 = Auto mix
 std::vector<int> scaleOf (const Params&);
 std::string scaleNotesText (const Params&);
@@ -119,4 +125,4 @@ std::string serializeParams (const Params&);
 void deserializeParams (const std::string&, Params&);
 std::string serialize (const Pattern&);
 bool deserialize (const std::string&, Pattern&);
-} // namespace goa
+} // namespace dali

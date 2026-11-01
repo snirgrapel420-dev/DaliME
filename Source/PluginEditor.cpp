@@ -1,7 +1,7 @@
 #include "PluginEditor.h"
 #include <cmath>
 
-using namespace GoaColours;
+using namespace DaliColours;
 static const char* LETTERS = "ABCDEFGH";
 static const juce::Colour DEG[7] = { juce::Colour (0xffddff4a), juce::Colour (0xff43f0ff), juce::Colour (0xffff4fd8), juce::Colour (0xffff9b45),
                                      juce::Colour (0xffb173ff), juce::Colour (0xff5cffa8), juce::Colour (0xffff6a7a) };
@@ -9,7 +9,7 @@ static juce::Font font (float h, bool bold = false) { return juce::Font (juce::F
 static int pcOf (int m) { return ((m % 12) + 12) % 12; }
 
 // ================= LookAndFeel =================
-GoaLookAndFeel::GoaLookAndFeel()
+DaliLookAndFeel::DaliLookAndFeel()
 {
     setColour (juce::ResizableWindow::backgroundColourId, bg);
     setColour (juce::TextButton::buttonColourId, panel2);
@@ -43,7 +43,7 @@ GoaLookAndFeel::GoaLookAndFeel()
 }
 
 // ================= roll drawing =================
-static void rollRange (const goa::Pattern& p, int& lo, int& hi)
+static void rollRange (const dali::Pattern& p, int& lo, int& hi)
 {
     lo = 127; hi = 0;
     for (auto& s : p.steps) if (s.on) { lo = std::min (lo, s.note); hi = std::max (hi, s.note); }
@@ -52,7 +52,7 @@ static void rollRange (const goa::Pattern& p, int& lo, int& hi)
     if (hi - lo < 12) { const int c = (hi + lo) / 2; lo = c - 6; hi = lo + 12; }
 }
 
-static void drawRoll (juce::Graphics& g, juce::Rectangle<float> a, const goa::Pattern& p, int playIdx, bool big)
+static void drawRoll (juce::Graphics& g, juce::Rectangle<float> a, const dali::Pattern& p, int playIdx, bool big)
 {
     g.setColour (roll);
     if (big) g.fillRect (a); else g.fillRoundedRectangle (a, 6.0f);
@@ -62,7 +62,7 @@ static void drawRoll (juce::Graphics& g, juce::Rectangle<float> a, const goa::Pa
     rollRange (p, lo, hi);
     const float rh = a.getHeight() / (float) (hi - lo + 1), cw = a.getWidth() / (float) N;
     const int root = p.params.root;
-    const auto sc = goa::scaleOf (p.params);
+    const auto sc = dali::scaleOf (p.params);
     g.setColour (juce::Colour (0xffddff4a).withAlpha (0.07f));
     for (int m = lo; m <= hi; ++m)
         if (pcOf (m - root) == 0) g.fillRect (a.getX(), a.getBottom() - (float) (m - lo + 1) * rh, a.getWidth(), rh);
@@ -98,7 +98,7 @@ static void drawRoll (juce::Graphics& g, juce::Rectangle<float> a, const goa::Pa
         {
             g.setColour (roll);
             g.setFont (font (10.0f, true));
-            g.drawText (goa::NOTE_NAMES[pcOf (s.note)], juce::Rectangle<float> (x + 3.0f, y, w - 3.0f, nh), juce::Justification::centredLeft, false);
+            g.drawText (dali::NOTE_NAMES[pcOf (s.note)], juce::Rectangle<float> (x + 3.0f, y, w - 3.0f, nh), juce::Justification::centredLeft, false);
         }
     }
     if (playIdx >= 0 && playIdx < N)
@@ -119,18 +119,36 @@ static juce::Path heartPath (juce::Rectangle<float> r)
     return p;
 }
 
-static juce::String modeText (const goa::Pattern& p)
+static juce::String modeText (const dali::Pattern& p)
 {
     switch (p.mode)
     {
-        case goa::Mode::Acid: return "Acid bassline, " + juce::String (p.params.style);
-        case goa::Mode::Arp: return "Goa arp, " + juce::String (p.params.style);
-        case goa::Mode::Chords: return "Chord-aware melody, " + juce::String (p.params.style);
-        case goa::Mode::Hook: return "Hook: " + juce::String (goa::hookShapeNames()[(size_t) juce::jlimit (0, 5, p.params.hookShape)]);
+        case dali::Mode::Acid: return "Acid bassline, " + juce::String (p.params.style);
+        case dali::Mode::Arp: return "Goa arp, " + juce::String (p.params.style);
+        case dali::Mode::Chords: return "Chord-aware melody, " + juce::String (p.params.style);
+        case dali::Mode::Hook: return "Hook: " + juce::String (dali::hookShapeNames()[(size_t) juce::jlimit (0, 8, p.params.hookShape)]);
         default: return juce::String (p.params.style);
     }
 }
-static juce::String rateText (int spb) { return spb == 24 ? "1/16T" : spb == 8 ? "1/8" : "1/16"; }
+static juce::String rateText (int spb, bool mixed = false)
+{
+    return spb == 24 ? "1/16T" : spb == 12 ? "1/8T" : spb == 8 ? "1/8" : mixed ? "1/16+1/8" : "1/16";
+}
+static juce::String grooveDescription (int fam)
+{
+    switch (fam)
+    {
+        case 1: return "Non-stop 16ths with accents. The classic Goa roll.";
+        case 2: return "Long-short-short gallop figures. Pushes forward.";
+        case 3: return "Rests on the beat, notes in between. Bouncy.";
+        case 4: return "3+3+2 accents across the bar. Syncopated and Latin-like.";
+        case 5: return "Notes tied across beats and the bar line.";
+        case 6: return "Short, sharp staccato hits with space around them.";
+        case 7: return "Steady 8th-note drive with the odd long note.";
+        case 8: return "Irregular, hand-played 16th patterns.";
+        default: return "Every idea gets a different rhythm feel.";
+    }
+}
 
 // ================= SlotView =================
 juce::Rectangle<float> SlotView::heartArea() const { return { (float) getWidth() - 32.0f, 4.0f, 28.0f, 26.0f }; }
@@ -155,7 +173,7 @@ void SlotView::paint (juce::Graphics& g)
     top.removeFromRight (26.0f);
     g.setColour (dim);
     g.setFont (font (11.5f));
-    g.drawText (juce::String (goa::NOTE_NAMES[p.params.root]) + " " + juce::String (p.params.scale).toLowerCase(), top,
+    g.drawText (juce::String (dali::NOTE_NAMES[p.params.root]) + " " + juce::String (p.params.scale).toLowerCase(), top,
                 juce::Justification::centredLeft, true);
 
     auto heart = heartPath (heartArea().reduced (5.0f, 5.0f));
@@ -270,7 +288,7 @@ void MidiDragSource::mouseDrag (const juce::MouseEvent& e)
     if (dragging || e.getDistanceFromDragStart() < 5) return;
     dragging = true;
     repaint();
-    auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("GoaMelodyEngine");
+    auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("DaliME");
     dir.createDirectory();
     auto f = dir.getChildFile (proc.fileBaseFor (proc.sel) + ".mid");
     const auto data = proc.midiFor (proc.sel);
@@ -282,7 +300,7 @@ void MidiDragSource::mouseDrag (const juce::MouseEvent& e)
 }
 
 // ================= Editor =================
-juce::Label& GoaEditor::makeLabel (juce::Label& l, const juce::String& text, bool dimText)
+juce::Label& DaliEditor::makeLabel (juce::Label& l, const juce::String& text, bool dimText)
 {
     l.setText (text, juce::dontSendNotification);
     l.setFont (font (13.0f, true));
@@ -292,14 +310,14 @@ juce::Label& GoaEditor::makeLabel (juce::Label& l, const juce::String& text, boo
     return l;
 }
 
-static juce::String modeDescription (goa::Mode m)
+static juce::String modeDescription (dali::Mode m)
 {
     switch (m)
     {
-        case goa::Mode::Acid: return "303-style bassline with accents and slides.";
-        case goa::Mode::Arp: return "Arpeggio that walks through your chords.";
-        case goa::Mode::Chords: return "Melody that changes with your chords.";
-        case goa::Mode::Hook: return "Short catchy phrase: one clear peak, comes home at the end.";
+        case dali::Mode::Acid: return "303-style bassline with accents and slides.";
+        case dali::Mode::Arp: return "Arpeggio that walks through your chords.";
+        case dali::Mode::Chords: return "Melody that changes with your chords.";
+        case dali::Mode::Hook: return "Short catchy phrase: one clear peak, comes home at the end.";
         default: return "Lead line built from one short motif.";
     }
 }
@@ -338,15 +356,20 @@ static juce::String hookDescription (int shape)
         case 3: return "A small cell, one step higher each time, then a fall.";
         case 4: return "Root and octave on the beat, a melodic tail in between. Psy lead.";
         case 5: return "Long notes and wide intervals. Made for the breakdown.";
+        case 6: return "Repeated note pairs stepping up, answered by a fall.";
+        case 7: return "Up and over in one arch. A smooth, singable line.";
+        case 8: return "Swings between a home note and a higher one, step by step.";
         default: return "Picks a shape that suits the style.";
     }
 }
 
-GoaEditor::GoaEditor (GoaProcessor& p) : AudioProcessorEditor (&p), proc (p), bigRoll (p), dragSrc (p)
+DaliEditor::DaliEditor (DaliProcessor& p) : AudioProcessorEditor (&p), proc (p), bigRoll (p), dragSrc (p)
 {
     setLookAndFeel (&lnf);
 
-    makeLabel (title, "Goa Melody Engine", false).setFont (font (24.0f, true));
+    makeLabel (title, "DaliME", false).setFont (font (24.0f, true));
+    makeLabel (subtitle, "MIDI ENGINE  \xc2\xb7  Dali Audio", false).setFont (font (12.5f));
+    subtitle.setJustificationType (juce::Justification::bottomLeft);
     makeLabel (modeL, "Mode");
     makeLabel (modeHelp, "").setFont (font (11.5f));
     makeLabel (rootL, "Root");
@@ -367,17 +390,17 @@ GoaEditor::GoaEditor (GoaProcessor& p) : AudioProcessorEditor (&p), proc (p), bi
         b.setButtonText (modeNames[i]);
         b.setClickingTogglesState (true);
         b.setRadioGroupId (1001);
-        b.setTooltip (modeDescription ((goa::Mode) i) + " Applies on the next Generate.");
-        b.onClick = [this, i] { if (modeBtns[(size_t) i].getToggleState()) { proc.params.mode = (goa::Mode) i; ++proc.modelVersion; } };
+        b.setTooltip (modeDescription ((dali::Mode) i) + " Applies on the next Generate.");
+        b.onClick = [this, i] { if (modeBtns[(size_t) i].getToggleState()) { proc.params.mode = (dali::Mode) i; ++proc.modelVersion; } };
         addAndMakeVisible (b);
     }
 
-    for (int i = 0; i < 12; ++i) rootBox.addItem (goa::NOTE_NAMES[i], i + 1);
+    for (int i = 0; i < 12; ++i) rootBox.addItem (dali::NOTE_NAMES[i], i + 1);
     rootBox.onChange = [this] { proc.params.root = rootBox.getSelectedId() - 1; ++proc.modelVersion; };
     addAndMakeVisible (rootBox);
 
     int id = 1;
-    for (auto& grp : goa::scaleGroups())
+    for (auto& grp : dali::scaleGroups())
     {
         scaleBox.addSectionHeading (juce::String (grp.name));
         for (auto& s : grp.scales) { scaleBox.addItem (juce::String (s.first), id++); scaleIds.push_back (s.first); }
@@ -391,7 +414,7 @@ GoaEditor::GoaEditor (GoaProcessor& p) : AudioProcessorEditor (&p), proc (p), bi
         const std::string prev = proc.params.scale;
         proc.params.scale = scaleIds[(size_t) sid - 1];
         if (proc.params.scale == "Custom")
-            if (auto* s = goa::findScale (prev)) { proc.params.custom.fill (0); for (int x : *s) proc.params.custom[(size_t) x] = 1; }
+            if (auto* s = dali::findScale (prev)) { proc.params.custom.fill (0); for (int x : *s) proc.params.custom[(size_t) x] = 1; }
         ++proc.modelVersion;
     };
     addAndMakeVisible (scaleBox);
@@ -410,7 +433,7 @@ GoaEditor::GoaEditor (GoaProcessor& p) : AudioProcessorEditor (&p), proc (p), bi
         addChildComponent (b);
     }
 
-    auto styles = goa::styleNames();
+    auto styles = dali::styleNames();
     for (size_t i = 0; i < styles.size(); ++i) styleBox.addItem (juce::String (styles[i]), (int) i + 1);
     styleBox.onChange = [this, styles] {
         const int sid = styleBox.getSelectedId();
@@ -421,7 +444,7 @@ GoaEditor::GoaEditor (GoaProcessor& p) : AudioProcessorEditor (&p), proc (p), bi
     makeLabel (riffL, "Riff type");
     makeLabel (riffHelp, "").setFont (font (11.5f));
     {
-        const auto types = goa::riffTypeNames();
+        const auto types = dali::riffTypeNames();
         for (size_t i = 0; i < types.size(); ++i) riffBox.addItem (juce::String (types[i]), (int) i + 1);
     }
     riffBox.setTooltip ("What kind of riff to write. Auto mixes all types so the 8 ideas sound different.");
@@ -433,14 +456,24 @@ GoaEditor::GoaEditor (GoaProcessor& p) : AudioProcessorEditor (&p), proc (p), bi
     chordsEd.onTextChange = [this] { proc.params.chords = chordsEd.getText().toStdString(); };
     addChildComponent (chordsEd);
 
+    makeLabel (grooveL, "Rhythm feel");
+    makeLabel (grooveHelp, "").setFont (font (11.5f));
+    {
+        const auto fams = dali::grooveFamilyNames();
+        for (size_t i = 0; i < fams.size(); ++i) grooveBox.addItem (juce::String (fams[i]), (int) i + 1);
+    }
+    grooveBox.setTooltip ("The rhythm style of the notes: rolling, syncopated, staccato, off-beat... Auto gives each idea a different feel.");
+    grooveBox.onChange = [this] { proc.params.groove = juce::jlimit (0, 8, grooveBox.getSelectedId() - 1); ++proc.modelVersion; };
+    addAndMakeVisible (grooveBox);
+
     makeLabel (hookL, "Hook shape");
     makeLabel (hookHelp, "").setFont (font (11.5f));
     {
-        const auto shapes = goa::hookShapeNames();
+        const auto shapes = dali::hookShapeNames();
         for (size_t i = 0; i < shapes.size(); ++i) hookBox.addItem (juce::String (shapes[i]), (int) i + 1);
     }
     hookBox.setTooltip ("The musical shape of the hook. Every hook repeats its rhythm, has one peak and ends on the root.");
-    hookBox.onChange = [this] { proc.params.hookShape = juce::jlimit (0, 5, hookBox.getSelectedId() - 1); ++proc.modelVersion; };
+    hookBox.onChange = [this] { proc.params.hookShape = juce::jlimit (0, 8, hookBox.getSelectedId() - 1); ++proc.modelVersion; };
     addChildComponent (hookBox);
 
     const char* kn[4] = { "Density", "Movement", "Register", "Weirdness" };
@@ -479,16 +512,18 @@ GoaEditor::GoaEditor (GoaProcessor& p) : AudioProcessorEditor (&p), proc (p), bi
         b.onClick = [this, i, v = barVals[i]] { if (barBtns[(size_t) i].getToggleState()) proc.params.bars = v; };
         addAndMakeVisible (b);
     }
-    const int rateVals[3] = { 16, 24, 8 };
-    const char* rateTips[3] = { "16th notes: the classic rolling Goa grid.", "16th-note triplets: a swinging, galloping feel.", "8th notes: slower and more open." };
-    for (int i = 0; i < 3; ++i)
+    const int rateVals[5] = { 16, 24, 8, 12, 16 };
+    const char* rateTips[5] = { "16th notes: the classic rolling Goa grid.", "16th-note triplets: a swinging, galloping feel.",
+                                "8th notes: slower and more open.", "8th-note triplets: a slow rolling swing.",
+                                "16ths mixed with 8ths: melodies with notes of different lengths." };
+    for (int i = 0; i < 5; ++i)
     {
         auto& b = rateBtns[(size_t) i];
-        b.setButtonText (rateText (rateVals[i]));
+        b.setButtonText (rateText (rateVals[i], i == 4));
         b.setClickingTogglesState (true);
         b.setRadioGroupId (1003);
         b.setTooltip (rateTips[i]);
-        b.onClick = [this, i, v = rateVals[i]] { if (rateBtns[(size_t) i].getToggleState()) proc.params.spb = v; };
+        b.onClick = [this, i, v = rateVals[i]] { if (rateBtns[(size_t) i].getToggleState()) { proc.params.spb = v; proc.params.mixed = (i == 4); } };
         addAndMakeVisible (b);
     }
 
@@ -599,13 +634,13 @@ GoaEditor::GoaEditor (GoaProcessor& p) : AudioProcessorEditor (&p), proc (p), bi
     startTimerHz (30);
 }
 
-GoaEditor::~GoaEditor()
+DaliEditor::~DaliEditor()
 {
     stopTimer();
     setLookAndFeel (nullptr);
 }
 
-void GoaEditor::rebuildMidiOutList()
+void DaliEditor::rebuildMidiOutList()
 {
     midiOutItems = proc.availableMidiOuts();
     midiOutBox.clear (juce::dontSendNotification);
@@ -618,17 +653,17 @@ void GoaEditor::rebuildMidiOutList()
     if (midiOutItems.isEmpty()) midiOutBox.setTooltip ("No MIDI ports found. On Windows install the free loopMIDI, create a port, then choose Rescan ports.");
 }
 
-void GoaEditor::updateHelpTexts()
+void DaliEditor::updateHelpTexts()
 {
     const auto& P = proc.params;
     const int tier = juce::jlimit (0, 3, (int) std::floor (P.density * 4.0));
-    const char* dens[4] = { "About 1-2 notes per beat. Lots of space.", "About 2-3 notes per beat, 8th-note feel.",
-                            "About 3 notes per beat, galloping 16ths.", "About 4 notes per beat, full rolling 16ths." };
+    const char* dens[4] = { "Sparse: about 4 notes per bar. Long, syncopated hits.", "Light: 5-7 notes per bar. Space to breathe.",
+                            "Busy: 8-11 notes per bar. Galloping 16ths.", "Full: 12-16 notes per bar. Rolling 16ths." };
     juce::String d = dens[tier];
     if (P.density >= .45) d << " Root pedal can appear between notes.";
 
     const double mv = P.movement;
-    const bool isHook = P.mode == goa::Mode::Hook;
+    const bool isHook = P.mode == dali::Mode::Hook;
     if (isHook)
     {
         const char* space[3] = { "Sparse hook: 2-4 long notes per bar.", "Medium: about 6 notes per bar.", "Busy: 8-10 notes per bar." };
@@ -643,8 +678,8 @@ void GoaEditor::updateHelpTexts()
                                     : "Leaps up to an octave. The motif is reversed and inverted.";
 
     int oct = 2 + (int) std::lround (P.reg * 3);
-    if (P.mode == goa::Mode::Acid) oct = std::max (1, oct - 1);
-    const juce::String root = goa::NOTE_NAMES[P.root];
+    if (P.mode == dali::Mode::Acid) oct = std::max (1, oct - 1);
+    const juce::String root = dali::NOTE_NAMES[P.root];
     const juce::String r = "Centred on " + root + juce::String (oct) + ", range about " + root + juce::String (oct - 1) + " to " + root + juce::String (oct + 1) + ".";
 
     const double w = P.weird;
@@ -668,15 +703,15 @@ void GoaEditor::updateHelpTexts()
     styleHelp.setText (styleDescription (P.style), juce::dontSendNotification);
 }
 
-void GoaEditor::editStep (int i, int lane, int value)
+void DaliEditor::editStep (int i, int lane, int value)
 {
-    goa::Pattern p = *proc.slots[(size_t) proc.sel];
+    dali::Pattern p = *proc.slots[(size_t) proc.sel];
     auto& st = p.steps;
     if (i < 0 || i >= (int) st.size()) return;
     auto& s = st[(size_t) i];
     if (lane == 0)
     {
-        if (s.on && s.note == value) s = goa::Step {};
+        if (s.on && s.note == value) s = dali::Step {};
         else
         {
             const bool was = s.on;
@@ -701,31 +736,31 @@ void GoaEditor::editStep (int i, int lane, int value)
     proc.replaceSelected (std::move (p));
 }
 
-void GoaEditor::refreshAll()
+void DaliEditor::refreshAll()
 {
     seenVersion = proc.modelVersion.load();
     auto& P = proc.params;
     for (int i = 0; i < 5; ++i) modeBtns[(size_t) i].setToggleState ((int) P.mode == i, juce::dontSendNotification);
     rootBox.setSelectedId (P.root + 1, juce::dontSendNotification);
     for (size_t i = 0; i < scaleIds.size(); ++i) if (scaleIds[i] == P.scale) scaleBox.setSelectedId ((int) i + 1, juce::dontSendNotification);
-    const auto styles = goa::styleNames();
+    const auto styles = dali::styleNames();
     for (size_t i = 0; i < styles.size(); ++i) if (styles[i] == P.style) styleBox.setSelectedId ((int) i + 1, juce::dontSendNotification);
-    scaleNotes.setText (juce::String (goa::scaleNotesText (P)), juce::dontSendNotification);
+    scaleNotes.setText (juce::String (dali::scaleNotesText (P)), juce::dontSendNotification);
 
     const bool customVisible = P.scale == "Custom";
     for (int i = 0; i < 12; ++i)
     {
         auto& b = customBtns[(size_t) i];
-        b.setButtonText (goa::NOTE_NAMES[(P.root + i) % 12]);
+        b.setButtonText (dali::NOTE_NAMES[(P.root + i) % 12]);
         b.setToggleState (i == 0 || P.custom[(size_t) i] != 0, juce::dontSendNotification);
         b.setVisible (customVisible);
     }
-    const bool chordsVisible = P.mode == goa::Mode::Arp || P.mode == goa::Mode::Chords;
+    const bool chordsVisible = P.mode == dali::Mode::Arp || P.mode == dali::Mode::Chords;
     chordsEd.setVisible (chordsVisible);
     chordsL.setVisible (chordsVisible);
     if (chordsEd.getText().toStdString() != P.chords) chordsEd.setText (juce::String (P.chords), false);
-    const bool hookVisible = P.mode == goa::Mode::Hook;
-    const bool riffVisible = P.mode != goa::Mode::Hook && P.mode != goa::Mode::Arp;
+    const bool hookVisible = P.mode == dali::Mode::Hook;
+    const bool riffVisible = P.mode != dali::Mode::Hook && P.mode != dali::Mode::Arp;
     riffL.setVisible (riffVisible);
     riffBox.setVisible (riffVisible);
     riffHelp.setVisible (riffVisible);
@@ -733,15 +768,18 @@ void GoaEditor::refreshAll()
     hookL.setVisible (hookVisible);
     hookBox.setVisible (hookVisible);
     hookHelp.setVisible (hookVisible);
-    hookBox.setSelectedId (juce::jlimit (0, 5, P.hookShape) + 1, juce::dontSendNotification);
+    hookBox.setSelectedId (juce::jlimit (0, 8, P.hookShape) + 1, juce::dontSendNotification);
+    grooveBox.setSelectedId (juce::jlimit (0, 8, P.groove) + 1, juce::dontSendNotification);
+    grooveHelp.setText (grooveDescription (P.groove), juce::dontSendNotification);
 
     const double vals[4] = { P.density, P.movement, P.reg, P.weird };
     for (int i = 0; i < 4; ++i) knobs[(size_t) i].slider.setValue (vals[i] * 100.0, juce::dontSendNotification);
     updateHelpTexts();
     const int barVals[5] = { 1, 2, 4, 8, 16 };
     for (int i = 0; i < 5; ++i) barBtns[(size_t) i].setToggleState (P.bars == barVals[i], juce::dontSendNotification);
-    const int rateVals[3] = { 16, 24, 8 };
-    for (int i = 0; i < 3; ++i) rateBtns[(size_t) i].setToggleState (P.spb == rateVals[i], juce::dontSendNotification);
+    const int rateVals[5] = { 16, 24, 8, 12, 16 };
+    for (int i = 0; i < 5; ++i)
+        rateBtns[(size_t) i].setToggleState (P.spb == rateVals[i] && (P.spb != 16 || (i == 4) == P.mixed), juce::dontSendNotification);
 
     const double amts[4] = { .1, .3, .7, 1.0 };
     const char* hints[4] = { "one small change", "rhythm and a few notes", "same motif, new melody", "something new" };
@@ -761,7 +799,7 @@ void GoaEditor::refreshAll()
     {
         const auto& d = *proc.dna;
         auto pc = [] (double v) { return juce::String ((int) std::lround (v * 100)) + "%"; };
-        dnaInfo.setText (proc.dnaName + ": " + goa::NOTE_NAMES[d.root] + " " + juce::String (d.scale).toLowerCase() + ", " + juce::String (d.noteCount)
+        dnaInfo.setText (proc.dnaName + ": " + dali::NOTE_NAMES[d.root] + " " + juce::String (d.scale).toLowerCase() + ", " + juce::String (d.noteCount)
                              + " notes. Stepwise " + pc (d.stepwise) + ", syncopation " + pc (d.sync) + ", repetition " + pc (d.pedal)
                              + ", octave moves " + pc (d.octJump) + ".",
                          juce::dontSendNotification);
@@ -770,13 +808,13 @@ void GoaEditor::refreshAll()
 
     const auto& pat = *proc.slots[(size_t) proc.sel];
     bigLetter.setText (juce::String::charToString (LETTERS[proc.sel]), juce::dontSendNotification);
-    detailTitle.setText (juce::String (goa::NOTE_NAMES[pat.params.root]) + " " + juce::String (pat.params.scale).toLowerCase() + ", " + modeText (pat),
+    detailTitle.setText (juce::String (dali::NOTE_NAMES[pat.params.root]) + " " + juce::String (pat.params.scale).toLowerCase() + ", " + modeText (pat),
                          juce::dontSendNotification);
     juce::String sub;
-    if (pat.mode != goa::Mode::Arp && ! pat.motif.empty())
+    if (pat.mode != dali::Mode::Arp && ! pat.motif.empty())
     {
         juce::StringArray m;
-        for (int n : goa::motifToNotes (pat)) m.add (goa::NOTE_NAMES[pcOf (n)]);
+        for (int n : dali::motifToNotes (pat)) m.add (dali::NOTE_NAMES[pcOf (n)]);
         sub << "Motif " << m.joinIntoString (" ") << ". ";
     }
     if (! pat.chordNames.empty())
@@ -785,7 +823,7 @@ void GoaEditor::refreshAll()
         for (auto& n : pat.chordNames) c.add (juce::String (n));
         sub << "Over " << c.joinIntoString (" ") << ". ";
     }
-    sub << pat.bars << (pat.bars > 1 ? " bars" : " bar") << " at " << rateText (pat.spb) << ".";
+    sub << pat.bars << (pat.bars > 1 ? " bars" : " bar") << " at " << rateText (pat.spb, pat.params.mixed) << ".";
     if (! pat.origin.empty()) sub << " " << juce::String (pat.origin) << ".";
     detailSub.setText (sub, juce::dontSendNotification);
 
@@ -808,7 +846,7 @@ void GoaEditor::refreshAll()
     for (auto& s : slotViews) s->repaint();
 }
 
-void GoaEditor::layoutRoll()
+void DaliEditor::layoutRoll()
 {
     const auto& pat = *proc.slots[(size_t) proc.sel];
     const int per = pat.spb == 8 ? 16 : pat.spb == 24 ? 7 : 9;
@@ -817,7 +855,7 @@ void GoaEditor::layoutRoll()
     bigRoll.setSize (w, std::max (80, h));
 }
 
-void GoaEditor::timerCallback()
+void DaliEditor::timerCallback()
 {
     if (proc.modelVersion.load() != seenVersion) refreshAll();
     bigRoll.setPlayIdx (proc.playStep.load());
@@ -833,7 +871,7 @@ void GoaEditor::timerCallback()
     if (bpmInfo.getText() != b) bpmInfo.setText (b, juce::dontSendNotification);
 }
 
-void GoaEditor::paint (juce::Graphics& g)
+void DaliEditor::paint (juce::Graphics& g)
 {
     g.fillAll (bg);
     g.setColour (panel);
@@ -844,7 +882,7 @@ void GoaEditor::paint (juce::Graphics& g)
     g.drawRoundedRectangle (detailPanel.toFloat().reduced (0.5f), 12.0f, 1.0f);
 }
 
-void GoaEditor::resized()
+void DaliEditor::resized()
 {
     auto r = getLocalBounds().reduced (16);
 
@@ -854,7 +892,11 @@ void GoaEditor::resized()
     leftPanel = left;
     left = left.reduced (14);
     auto gap = [&] (int h) { left.removeFromTop (h); };
-    title.setBounds (left.removeFromTop (32));
+    {
+        auto tr = left.removeFromTop (32);
+        title.setBounds (tr.removeFromLeft (112));
+        subtitle.setBounds (tr.withTrimmedBottom (4));
+    }
     gap (6);
     modeL.setBounds (left.removeFromTop (18));
     {
@@ -906,6 +948,10 @@ void GoaEditor::resized()
         styleBox.setBounds (left.removeFromTop (28));
         styleHelp.setBounds (left.removeFromTop (18));
     }
+    gap (4);
+    grooveL.setBounds (left.removeFromTop (18));
+    grooveBox.setBounds (left.removeFromTop (28));
+    grooveHelp.setBounds (left.removeFromTop (16));
     gap (6);
     if (lastChordsVisible)
     {
@@ -939,7 +985,7 @@ void GoaEditor::resized()
     rateL.setBounds (left.removeFromTop (18));
     {
         auto row = left.removeFromTop (28);
-        const int w = row.getWidth() / 3;
+        const int w = row.getWidth() / 5;
         for (auto& b : rateBtns) b.setBounds (row.removeFromLeft (w).reduced (1, 0));
     }
 

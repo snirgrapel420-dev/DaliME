@@ -8,7 +8,7 @@
 #include <set>
 #include <sstream>
 
-namespace goa
+namespace dali
 {
 const char* NOTE_NAMES[12] = { "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B" };
 
@@ -43,14 +43,14 @@ bool startsWith (const std::string& s, const char* p) { return s.rfind (p, 0) ==
 const std::vector<std::pair<std::string, StyleProfile>>& styles()
 {
     static const std::vector<std::pair<std::string, StyleProfile>> s {
-        { "Goa Melody", { .35, .55, .15, 4, 5, 4, .08, .15, .08, .25, .12, "roll", 0.0 } },
-        { "Acid",       { .30, .40, .25, 3, 4, 5, .20, .35, .30, .40, .30, "acid", 0.0 } },
-        { "Hypnotic",   { .55, .60, .35, 2, 3, 3, .10, .20, .05, .20, .10, "roll", 0.0 } },
-        { "Emotional",  { .10, .75, .10, 4, 6, 5, .15, .10, .03, .10, .20, "long", 0.0 } },
-        { "Dark",       { .45, .60, .20, 3, 4, 3, .12, .25, .12, .30, .15, "roll", -.25 } },
-        { "Cosmic",     { .15, .30, .10, 4, 5, 7, .12, .20, .20, .20, .25, "roll", .20 } },
-        { "90s Goa",    { .60, .50, .15, 4, 4, 4, .03, .05, .10, .20, .10, "roll", 0.0 } },
-        { "Modern Goa", { .30, .50, .15, 3, 5, 5, .20, .40, .12, .30, .15, "sync", 0.0 } },
+        { "Goa Melody", { .35, .55, .15, 4, 5, 4, .08, .15, .08, .25, .12, "roll", 0.0, .7 } },
+        { "Acid",       { .30, .40, .25, 3, 4, 5, .20, .35, .30, .40, .30, "acid", 0.0, .55 } },
+        { "Hypnotic",   { .55, .60, .35, 2, 3, 3, .10, .20, .05, .20, .10, "roll", 0.0, .8 } },
+        { "Emotional",  { .10, .75, .10, 4, 6, 5, .15, .10, .03, .10, .20, "long", 0.0, .95 } },
+        { "Dark",       { .45, .60, .20, 3, 4, 3, .12, .25, .12, .30, .15, "roll", -.25, .45 } },
+        { "Cosmic",     { .15, .30, .10, 4, 5, 7, .12, .20, .20, .20, .25, "roll", .20, .85 } },
+        { "90s Goa",    { .60, .50, .15, 4, 4, 4, .03, .05, .10, .20, .10, "roll", 0.0, .65 } },
+        { "Modern Goa", { .30, .50, .15, 3, 5, 5, .20, .40, .12, .30, .15, "sync", 0.0, .5 } },
     };
     return s;
 }
@@ -199,57 +199,237 @@ int chordOff (const Chord& ch, const Params& p, const std::vector<int>& sc)
     return std::abs (idx - n) < idx ? idx - n : idx;
 }
 
-// Rhythm is built from curated one-beat cells (real Goa/psy grooves), arranged b1 b2 b1 b4
-// so the groove repeats inside the bar instead of being random per step.
-BoolVec cellFromString (const char* c)
+// ================= Rhythm: groove library =================
+// One bar on a 16th grid.  '.' rest   'x' note   'X' accented note   'L' long note (rings until the next one)
+// 's' short staccato note.  Spaces separate the beats and are ignored.  Other grids are resampled from these.
+enum Family { F_ROLL = 1, F_GALLOP, F_OFFBEAT, F_TRESILLO, F_SYNC, F_STAB, F_DRIVE, F_BROKEN, F_COUNT };
+struct GrooveDef { int family; std::string pat; int notes, tier; };
+
+const std::vector<std::pair<int, const char*>>& grooveRaw()
 {
-    BoolVec v;
-    for (const char* p = c; *p != 0; ++p) v.push_back (*p == '1');
+    static const std::vector<std::pair<int, const char*>> raw {
+        // rolling 16ths: the classic Goa roll, with different holes and accents
+        { F_ROLL, "Xxxx Xxxx Xxxx Xxxx" }, { F_ROLL, "Xxxx xxxx Xxxx xxxx" }, { F_ROLL, "Xxx. Xxx. Xxx. Xxx." },
+        { F_ROLL, "Xxxx Xxx. Xxxx Xxx." }, { F_ROLL, "Xxxx xxxx Xxxx Xxxs" }, { F_ROLL, "Xxx. xxxx Xxx. xxxx" },
+        // gallop: 1 . a-style dotted groups
+        { F_GALLOP, "X.xx X.xx X.xx X.xx" }, { F_GALLOP, "Xx.x Xx.x Xx.x Xx.x" }, { F_GALLOP, "X.xx X.xx X.xx X.x." },
+        { F_GALLOP, "X..x X..x X..x X..x" }, { F_GALLOP, "X.xx x.xx X.xx x.xx" }, { F_GALLOP, "Xx.x xx.x Xx.x xx.x" },
+        // off-beat: rests on the beat, notes on the "and" / "e-a"
+        { F_OFFBEAT, "..L. ..L. ..L. ..L." }, { F_OFFBEAT, "..Xx ..Xx ..Xx ..Xx" }, { F_OFFBEAT, ".xXx .xXx .xXx .xXx" },
+        { F_OFFBEAT, "..X. .x.. ..X. .x.." }, { F_OFFBEAT, ".xx. .xx. .xx. .xx." }, { F_OFFBEAT, ".X.x .X.x .X.x .X.x" },
+        // tresillo / 3-3-2 and its cousins
+        { F_TRESILLO, "X..x ..x. X..x ..x." }, { F_TRESILLO, "X..x ..x. ..x. X.x." }, { F_TRESILLO, "X..x ..x. ..x. ..x." },
+        { F_TRESILLO, "X..x ..L. X..x ..L." }, { F_TRESILLO, "X..x ..x. X..x .xx." }, { F_TRESILLO, "X.x. x..x X.x. x..x" },
+        { F_TRESILLO, "X..x .... X... ...." },
+        // syncopated: anticipations, ties across the beat and across the bar line
+        { F_SYNC, "L... ..x. L... ..x." }, { F_SYNC, "X... x... ..x. x..." }, { F_SYNC, "L... ..L. ..L. ...." },
+        { F_SYNC, "X..x ..X. ...x ..x." }, { F_SYNC, ".x.. X..x ..X. .x.." }, { F_SYNC, "X.x. ..x. X.x. ..xL" },
+        { F_SYNC, "X... x..x X... x.xL" }, { F_SYNC, "X.x. ..xx ..x. X..x" }, { F_SYNC, "X..x .x.. X.x. .xx." },
+        { F_SYNC, "X..x .xx. x..x .xxL" }, { F_SYNC, ".x.x X..x .x.x X..x" },
+        // staccato stabs
+        { F_STAB, "X... s... X... s..." }, { F_STAB, "X..s ..s. X..s .s.." }, { F_STAB, "X... s..s X... s.s." },
+        { F_STAB, "..X. s... ..X. s.s." }, { F_STAB, "X.s. X.s. X.s. X.s." }, { F_STAB, ".sXs .sXs .sXs .sXs" },
+        { F_STAB, "X.s. .s.s X.s. .s.s" }, { F_STAB, "Xs.. Xs.. Xs.. Xs.." },
+        // driving 8ths
+        { F_DRIVE, "X.x. X.x. X.x. X.x." }, { F_DRIVE, "X.x. x.x. X.x. x.x." }, { F_DRIVE, "X.x. X.x. X.x. X.L." },
+        { F_DRIVE, "L... x.x. L... x.x." }, { F_DRIVE, "X.x. x.xx X.x. x.xx" }, { F_DRIVE, "L... L... L... L..." },
+        // broken 16ths: irregular, hand-played feel
+        { F_BROKEN, "Xx.x x.xx Xx.x .x.x" }, { F_BROKEN, "X.xx x.x. Xx.x x.x." }, { F_BROKEN, "Xxx. x.xx Xx.x .xx." },
+        { F_BROKEN, "X.x. xx.x X.xx .x.x" }, { F_BROKEN, "X.xx .x.x Xx.x .xx." }, { F_BROKEN, "Xx.x .xx. X.xx x.xL" },
+    };
+    return raw;
+}
+
+const std::vector<GrooveDef>& grooveLib()
+{
+    static const std::vector<GrooveDef> lib = [] {
+        std::vector<GrooveDef> v;
+        for (auto& r : grooveRaw())
+        {
+            std::string s;
+            for (const char* c = r.second; *c != 0; ++c) if (*c != ' ') s += *c;
+            if (s.size() != 16) continue; // a malformed groove is never accepted
+            int n = 0;
+            for (char c : s) if (c != '.') ++n;
+            v.push_back ({ r.first, s, n, n <= 4 ? 0 : n <= 7 ? 1 : n <= 11 ? 2 : 3 });
+        }
+        return v;
+    }();
+    return lib;
+}
+
+struct Groove
+{
+    std::vector<char> k; // one symbol per step
+    int family = 0, id = -1;
+};
+int onsetCount (const Groove& g) { int c = 0; for (char x : g.k) if (x != '.') ++c; return c; }
+
+// 16th pattern -> any grid (24 = 16th triplets, 12 = 8th triplets, 8 = 8ths)
+std::vector<char> resampleGroove (const std::string& pat16, int spb)
+{
+    std::vector<char> out ((size_t) spb, '.');
+    auto rank = [] (char c) { return c == 'X' ? 4 : c == 'L' ? 3 : c == 'x' ? 2 : c == 's' ? 1 : 0; };
+    for (int i = 0; i < 16; ++i)
+    {
+        const char c = pat16[(size_t) i];
+        if (c == '.') continue;
+        int t = i;
+        if (spb == 24) t = (i * 3 + 1) / 2;
+        else if (spb == 12) t = (i * 3) / 4;
+        else if (spb == 8) t = i / 2;
+        t = clampi (t, 0, spb - 1);
+        if (rank (c) > rank (out[(size_t) t])) out[(size_t) t] = c;
+    }
+    return out;
+}
+
+// 16ths and 8ths mixed: at least one pair of neighbouring 16ths and at least one note that rings 3+ steps
+bool isMixedGroove (const std::string& s)
+{
+    bool pair = false, longNote = false;
+    for (int i = 0; i < 16; ++i)
+    {
+        if (s[(size_t) i] == '.') continue;
+        if (s[(size_t) ((i + 1) % 16)] != '.') pair = true;
+        int gap = 1;
+        while (gap < 16 && s[(size_t) ((i + gap) % 16)] == '.') ++gap;
+        if (gap >= 3) longNote = true;
+    }
+    return pair && longNote;
+}
+
+// How much each style likes each family:        roll  gallop offb  tres  sync  stab  drive broken
+std::array<double, 8> familyWeights (const Params& p)
+{
+    std::array<double, 8> w { .30, .25, .10, .10, .10, .05, .05, .15 };
+    const auto& s = p.style;
+    if (s == "Acid")            w = { .10, .15, .15, .15, .20, .10, .00, .15 };
+    else if (s == "Hypnotic")   w = { .35, .30, .05, .05, .05, .00, .15, .05 };
+    else if (s == "Emotional")  w = { .00, .05, .15, .20, .30, .05, .20, .05 };
+    else if (s == "Dark")       w = { .30, .25, .10, .05, .10, .10, .05, .05 };
+    else if (s == "Cosmic")     w = { .15, .10, .20, .15, .20, .05, .05, .10 };
+    else if (s == "90s Goa")    w = { .45, .30, .00, .05, .00, .00, .15, .05 };
+    else if (s == "Modern Goa") w = { .10, .10, .20, .20, .25, .10, .00, .05 };
+    if (p.mode == Mode::Acid) { w[0] *= .5; w[3] *= 1.4; w[4] *= 1.4; w[7] *= 1.3; }
+    return w;
+}
+
+int grooveTierFor (const Params& p, const StyleProfile& st, int arch)
+{
+    int tier = clampi ((int) std::floor (p.density * 4.0), 0, 3);
+    if (arch == 5) tier = std::max (tier, 2);
+    if (arch == 6) tier = std::min (tier, 1);
+    if (st.cells == "long") tier = std::max (0, tier - 1);
+    return tier;
+}
+
+int pickGrooveIndex (const Params& p, const StyleProfile& st, int arch, Rng& R, int exclude, int forceFamily,
+                     const std::vector<int>* allowedFamilies = nullptr, int tierOverride = -1)
+{
+    const auto& lib = grooveLib();
+    const int tier = tierOverride >= 0 ? tierOverride : grooveTierFor (p, st, arch);
+    const int fam = forceFamily > 0 ? forceFamily : p.groove;
+    const auto fw = familyWeights (p);
+    for (int relax = 0; relax < 3; ++relax)
+    {
+        std::vector<std::pair<int, double>> cand;
+        for (int g = 0; g < (int) lib.size(); ++g)
+        {
+            const auto& d = lib[(size_t) g];
+            if (g == exclude) continue;
+            if (fam > 0 && d.family != fam) continue;
+            if (allowedFamilies != nullptr && std::find (allowedFamilies->begin(), allowedFamilies->end(), d.family) == allowedFamilies->end()) continue;
+            if (relax == 0 && p.mixed && p.spb == 16 && ! isMixedGroove (d.pat)) continue;
+            const int dt = std::abs (d.tier - tier);
+            double w = dt == 0 ? 1.0 : dt == 1 ? .35 : (fam > 0 || relax > 0 ? .08 : 0.0);
+            if (fam == 0 && allowedFamilies == nullptr) w *= fw[(size_t) d.family - 1];
+            if (w > 0) cand.emplace_back (g, w);
+        }
+        if (cand.empty()) continue;
+        double t = 0;
+        for (auto& c : cand) t += c.second;
+        double r = R.next() * t;
+        for (auto& c : cand) { r -= c.second; if (r <= 0) return c.first; }
+        return cand.back().first;
+    }
+    return (int) (R.next() * lib.size()) % (int) lib.size();
+}
+
+// Move the onset on a beat one step early and let it ring across the beat: a tied anticipation (syncopation).
+void anticipateGroove (Groove& g, int spb, double prob, Rng& R)
+{
+    const int sb = spb / 4;
+    int done = 0;
+    for (int b = 1; b < 4 && done < 2; ++b)
+    {
+        const int pos = b * sb;
+        if (g.k[(size_t) pos] == '.' || g.k[(size_t) pos - 1] != '.') continue;
+        if (! R.chance (prob)) continue;
+        g.k[(size_t) pos - 1] = g.k[(size_t) pos] == 'X' ? 'X' : 'L';
+        g.k[(size_t) pos] = '.';
+        ++done;
+    }
+}
+// Leave a few weak notes out so the groove breathes.
+void dropWeak (Groove& g, int spb, Rng& R)
+{
+    const int sb = spb / 4;
+    std::vector<int> c;
+    for (int i = 0; i < spb; ++i) if ((g.k[(size_t) i] == 'x' || g.k[(size_t) i] == 's') && i % sb != 0) c.push_back (i);
+    if (c.size() > 3) g.k[(size_t) pickRef (R, c)] = '.';
+}
+// Replace one beat with a short fill.
+void fillBeat (Groove& g, int spb, int beat, Rng& R)
+{
+    static const std::vector<std::vector<std::string>> F = [] {
+        std::vector<std::vector<std::string>> f (7);
+        f[2] = { "xx", "x.", "Xx", ".x" };
+        f[3] = { "xxx", "x.x", "xx.", ".xx" };
+        f[4] = { "xxxx", "x.xx", "xxx.", ".xxx", "x.x.", "x..x", "XxxX" };
+        f[6] = { "xxxxxx", "x.xx.x", "xx.xx.", "x.x.xx", "xxx.xx" };
+        return f;
+    }();
+    const int sb = spb / 4;
+    if (sb < 0 || sb >= (int) F.size() || F[(size_t) sb].empty()) return;
+    const std::string& f = pickRef (R, F[(size_t) sb]);
+    for (int i = 0; i < sb; ++i) g.k[(size_t) (beat * sb + i)] = f[(size_t) i];
+}
+
+Groove makeGroove (const Params& p, const StyleProfile& st, int arch, int spb, Rng& R, int exclude = -1, int forceFamily = 0,
+                   const std::vector<int>* allowed = nullptr, int tierOverride = -1, bool transforms = true)
+{
+    const int id = pickGrooveIndex (p, st, arch, R, exclude, forceFamily, allowed, tierOverride);
+    const auto& d = grooveLib()[(size_t) id];
+    Groove g;
+    g.id = id;
+    g.family = d.family;
+    g.k = resampleGroove (d.pat, spb);
+    if (transforms)
+    {
+        const double sy = st.sync * (.7 + .8 * p.movement);
+        if (R.chance (clampd (sy * 1.6, 0.0, .75))) anticipateGroove (g, spb, .8, R);
+        if (onsetCount (g) > 6 && R.chance (.2 + st.rests)) dropWeak (g, spb, R);
+    }
+    return g;
+}
+Groove grooveFromMask (const BoolVec& m, int spb)
+{
+    Groove g;
+    g.k.assign ((size_t) spb, '.');
+    for (size_t i = 0; i < m.size() && (int) i < spb; ++i)
+        if (m[i]) g.k[i] = (int) i % (spb / 4) == 0 ? 'X' : 'x';
+    return g;
+}
+// The same bar with another ending: the first three beats stay (that is what makes it recognisable).
+Groove withFill (const Groove& g, int spb, double fillProb, double syncProb, Rng& R)
+{
+    Groove v = g;
+    if (R.chance (fillProb)) fillBeat (v, spb, 3, R);
+    if (R.chance (syncProb)) anticipateGroove (v, spb, .8, R);
     return v;
 }
-const std::vector<const char*>& beatCells (int spbeat, int tier, const std::string& cells)
-{
-    static const std::vector<std::vector<const char*>> s16 { { "1000", "1010", "1001", "1010" },
-                                                             { "1010", "1011", "1001", "1101", "1010" },
-                                                             { "1011", "1101", "1111", "1110", "1011" },
-                                                             { "1111", "1111", "1011", "1101" } };
-    static const std::vector<std::vector<const char*>> sync16 { { "1000", "0010", "1001" },
-                                                                { "1010", "0110", "1001", "0011" },
-                                                                { "1011", "0111", "1101", "0110" },
-                                                                { "1111", "0111", "1011", "1101" } };
-    static const std::vector<std::vector<const char*>> acid16 { { "1010", "1001", "1000" },
-                                                                { "1010", "1011", "1101", "0110" },
-                                                                { "1011", "1101", "1110", "0111", "1010" },
-                                                                { "1111", "1011", "1101", "1110" } };
-    static const std::vector<std::vector<const char*>> t24 { { "100000", "100100" },
-                                                             { "100100", "101100", "100110" },
-                                                             { "110110", "101101", "111011" },
-                                                             { "111111", "110111", "111111" } };
-    static const std::vector<std::vector<const char*>> e8 { { "10" }, { "10", "11" }, { "11", "10", "11" }, { "11" } };
-    tier = clampi (tier, 0, 3);
-    if (spbeat == 6) return t24[(size_t) tier];
-    if (spbeat == 2) return e8[(size_t) tier];
-    if (cells == "sync") return sync16[(size_t) tier];
-    if (cells == "acid") return acid16[(size_t) tier];
-    return s16[(size_t) tier];
-}
-BoolVec makeBarRhythm (int spb, const Params& p, const StyleProfile& st, Rng& R)
-{
-    const int spbeat = spb / 4;
-    int tier = clampi ((int) std::floor (p.density * 4.0), 0, 3);
-    if (st.cells == "long") tier = std::max (0, tier - 1);
-    auto cellAt = [&] {
-        int t = tier;
-        if (R.chance (.2)) t += R.chance (.5) ? 1 : -1;
-        return cellFromString (pickRef (R, beatCells (spbeat, t, st.cells)));
-    };
-    const BoolVec b1 = cellAt(), b2 = cellAt();
-    const BoolVec b4 = R.chance (.5) ? b2 : cellAt();
-    BoolVec bar;
-    for (const BoolVec* c : { &b1, &b2, &b1, &b4 }) bar.insert (bar.end(), c->begin(), c->end());
-    if (std::none_of (bar.begin(), bar.end(), [] (bool b) { return b; })) bar[0] = true;
-    return bar;
-}
+
 BoolVec rhythmVariant (const BoolVec& on, double amt, int spbeat, Rng& R)
 {
     BoolVec r = on;
@@ -335,7 +515,7 @@ std::vector<std::string> formFor (int bars)
     }
 }
 
-struct Ev { bool on = false; int deg = 0; bool pedal = false, hold = false; };
+struct Ev { bool on = false; int deg = 0; bool pedal = false, hold = false; char kind = 'x'; };
 using Bar = std::vector<Ev>;
 
 // ---- riff archetypes: 1 pedal riff, 2 motif, 3 chord tones, 4 octave bounce, 5 scale run, 6 stabs ----
@@ -394,21 +574,23 @@ std::vector<int> stabMotif (Rng& R)
 
 std::vector<Ev> genMelodic (const Params& p, const StyleProfile& st, const std::vector<int>* motifIn, std::vector<int>& motifOut,
                             int spb, int bars, const std::vector<std::string>& form, int n, const std::vector<BoolVec>* poolIn, Rng& R,
-                            int& archOut)
+                            int& archOut, int& grooveOut)
 {
     const int spbeat = spb / 4, half = spb / 2;
     const double mv = p.movement;
     int arch = (p.archetype >= 1 && p.archetype <= 6) ? p.archetype : pickWeighted (archetypeWeights (p), R);
     if (p.density < .35 && (arch == 1 || arch == 4)) arch = 2;
     archOut = arch;
-    const bool pedOn = arch == 1 || arch == 4;
     const int pedDeg = arch == 4 ? -n : (R.chance (.6) ? 0 : -n);
     const int parity = R.chance (.5) ? 0 : 1;
-    Params rp = p; // rhythm needs of the archetype
-    if (arch == 5) rp.density = std::max (p.density, .78);
-    if (arch == 6) rp.density = std::min (p.density, .45);
     const std::vector<BoolVec>* pool = (poolIn != nullptr && spb == 16 && ! poolIn->empty()) ? poolIn : nullptr;
-    const BoolVec baseR = pool != nullptr ? rhythmVariant (pickRef (R, *pool), .06, spbeat, R) : makeBarRhythm (spb, rp, st, R);
+    const Groove baseG = pool != nullptr ? grooveFromMask (rhythmVariant (pickRef (R, *pool), .06, spbeat, R), spb)
+                                         : makeGroove (p, st, arch, spb, R);
+    grooveOut = baseG.id;
+    BoolVec baseR;
+    for (char k : baseG.k) baseR.push_back (k != '.');
+    // the pedal tone only alternates with the melody in dense grooves; sparse / syncopated ones keep every note melodic
+    const bool pedOn = (arch == 1 || arch == 4) && onsetCount (baseG) >= 8;
 
     // melodic (non-pedal) notes in the first half bar decide the motif length
     auto melIn = [&] (const BoolVec& r, int len) {
@@ -431,7 +613,7 @@ std::vector<Ev> genMelodic (const Params& p, const StyleProfile& st, const std::
     motifOut = motif;
 
     // the motif restarts every half bar: call in the first half, answer in the second
-    auto fillBar = [&] (const BoolVec& r, const std::vector<int>& h0, const std::vector<int>& h1) {
+    auto fillBar = [&] (const Groove& r, const std::vector<int>& h0, const std::vector<int>& h1) {
         Bar b ((size_t) spb);
         int onIdx = 0, pedCount = 0;
         for (int h = 0; h < spb / unit; ++h)
@@ -440,9 +622,10 @@ std::vector<Ev> genMelodic (const Params& p, const StyleProfile& st, const std::
             int k = 0;
             for (int i = h * unit; i < (h + 1) * unit; ++i)
             {
-                if (! r[(size_t) i]) continue;
+                if (r.k[(size_t) i] == '.') continue;
                 b[(size_t) i].on = true;
-                if (pedOn && onIdx % 2 == parity)
+                b[(size_t) i].kind = r.k[(size_t) i];
+                if (pedOn && onIdx % 2 == parity && r.k[(size_t) i] != 'X')
                 {
                     b[(size_t) i].deg = arch == 4 ? ((pedCount++ % 2 == 0) ? pedDeg : pedDeg + n) : pedDeg; // octave bounce
                     b[(size_t) i].pedal = true;
@@ -464,16 +647,15 @@ std::vector<Ev> genMelodic (const Params& p, const StyleProfile& st, const std::
     std::function<Bar (const std::string&)> make = [&] (const std::string& l) -> Bar {
         if (l == "A2")
         {
-            BoolVec r = baseR;
-            if (R.chance (.3)) { const int i = R.ri (1, spb - 1); if (i % spbeat != 0) r[(size_t) i] = ! r[(size_t) i]; }
+            const Groove r = withFill (baseG, spb, .55, .25, R); // same first three beats, new tag
             const auto ans = answerOf (motif, mv, n, R);
             return unit == spb ? fillBar (r, ans, ans) : fillBar (r, motif, ans);
         }
-        if (l == "A3") { const int s = pickI (R, { n, 2, -2 }); return fillBar (baseR, shifted (motif, s), shifted (M1, s)); }
+        if (l == "A3") { const int s = pickI (R, { n, 2, -2 }); return fillBar (baseG, shifted (motif, s), shifted (M1, s)); }
         if (l == "B" || l == "B2")
         {
-            const BoolVec r = pool != nullptr && pool->size() > 1 ? rhythmVariant (pickRef (R, *pool), .06, spbeat, R)
-                                                                 : (R.chance (.5) ? baseR : makeBarRhythm (spb, p, st, R));
+            const Groove r = pool != nullptr && pool->size() > 1 ? grooveFromMask (rhythmVariant (pickRef (R, *pool), .06, spbeat, R), spb)
+                           : (R.chance (.3) ? baseG : makeGroove (p, st, arch, spb, R, baseG.id, R.chance (.6) ? baseG.family : 0));
             const auto T = shifted (motif, seqStep);
             return fillBar (r, T, answerOf (T, mv, n, R));
         }
@@ -488,11 +670,12 @@ std::vector<Ev> genMelodic (const Params& p, const StyleProfile& st, const std::
                 for (int i = spb - spbeat * 2; i < spb; ++i) if (c[(size_t) i].on && ! c[(size_t) i].pedal) { t = i; break; }
                 c[(size_t) t].deg = pickI (R, { 0, 0, n, 4 });
                 c[(size_t) t].hold = true;
+                c[(size_t) t].kind = 'L';
                 for (int i = t + 1; i < spb; ++i) c[(size_t) i] = Ev {};
             }
             return c;
         }
-        return fillBar (baseR, motif, M1);
+        return fillBar (baseG, motif, M1);
     };
     get = [&] (const std::string& l) -> const Bar& {
         auto it = cache.find (l);
@@ -512,7 +695,7 @@ std::vector<Ev> genMelodic (const Params& p, const StyleProfile& st, const std::
 
 std::vector<Step> genArp (const Params& p, const StyleProfile& st, int spb, int bars, const std::vector<std::string>& form,
                           const std::vector<Chord>& chords, const std::function<int (int)>& chordIdx, const PcSet& set,
-                          int base, Rng& R)
+                          int base, Rng& R, int& grooveOut)
 {
     static const std::vector<std::pair<std::string, std::vector<int>>> PAT {
         { "goa", { 0, 1, 2, 3, 2, 1 } }, { "up", { 0, 1, 2, 3, 4, 5 } }, { "down", { 5, 4, 3, 2, 1, 0 } },
@@ -528,8 +711,10 @@ std::vector<Step> genArp (const Params& p, const StyleProfile& st, int spb, int 
     if ((p.style == "90s Goa" || p.style == "Hypnotic") && R.chance (.5)) key = R.chance (.5) ? "pedal" : "goa";
     const std::vector<int> basePat = patOf (key);
     const int spbeat = spb / 4;
+    const Groove baseG = makeGroove (p, st, 0, spb, R);
+    grooveOut = baseG.id;
     BoolVec baseR;
-    for (int i = 0; i < spb; ++i) baseR.push_back (i % spbeat == 0 || R.chance (clampd (.3 + .68 * p.density - st.rests * .4, .05, .98)));
+    for (char k : baseG.k) baseR.push_back (k != '.');
 
     struct Cell { std::vector<int> pat; BoolVec r; };
     std::map<std::string, Cell> cache;
@@ -583,6 +768,7 @@ std::vector<Step> genArp (const Params& p, const StyleProfile& st, int spb, int 
             s.note = tn[(size_t) clampi (t, 0, (int) tn.size() - 1)];
             if (R.chance (st.octJump * p.movement * .6)) s.note += 12;
             s.pedal = t == 0;
+            s.kind = baseG.k[(size_t) i];
             steps.push_back (s);
         }
     }
@@ -597,48 +783,36 @@ std::vector<int> onsets (const std::vector<Step>& st)
 }
 
 // ================= Hook generator =================
-// A hook is a short, memorable phrase: a recognisable rhythm that repeats, one clear peak,
-// a first ending that stays open (5th) and a final ending that comes home (root).
-struct HNote { int pos, dur; }; // in 16ths inside one bar
-
-const std::vector<HNote>& hookRhythm (int shape, int tier)
+// A hook is a short, memorable phrase: a recognisable rhythm that repeats (statement, answer with a new tag),
+// one clear peak, a first ending that stays open (5th/3rd) and a final ending that comes home (root, long).
+// The rhythm comes from the groove library, so every Generate gets a different one.
+const std::vector<int>& hookFamilies (int shape)
 {
-    static const std::vector<std::vector<std::vector<HNote>>> T {
-        { { { 0, 4 }, { 6, 2 }, { 8, 8 } },
-          { { 0, 2 }, { 2, 2 }, { 4, 3 }, { 7, 1 }, { 8, 6 }, { 14, 2 } },
-          { { 0, 2 }, { 2, 1 }, { 3, 2 }, { 6, 2 }, { 8, 2 }, { 10, 2 }, { 12, 3 }, { 15, 1 } } },
-        { { { 0, 3 }, { 3, 3 }, { 6, 6 } },
-          { { 0, 3 }, { 3, 3 }, { 6, 2 }, { 8, 3 }, { 11, 3 }, { 14, 2 } },
-          { { 0, 3 }, { 3, 3 }, { 6, 1 }, { 7, 1 }, { 8, 3 }, { 11, 3 }, { 14, 1 }, { 15, 1 } } },
-        { { { 0, 4 }, { 4, 4 }, { 8, 4 }, { 12, 4 } },
-          { { 2, 2 }, { 4, 2 }, { 6, 2 }, { 8, 2 }, { 10, 2 }, { 12, 4 } },
-          { { 0, 1 }, { 1, 1 }, { 2, 2 }, { 4, 1 }, { 5, 1 }, { 6, 2 }, { 8, 1 }, { 9, 1 }, { 10, 2 }, { 12, 4 } } },
-        { { { 0, 4 }, { 4, 2 }, { 8, 4 }, { 12, 4 } },
-          { { 0, 3 }, { 3, 1 }, { 4, 2 }, { 6, 2 }, { 8, 3 }, { 11, 1 }, { 12, 4 } },
-          { { 0, 2 }, { 2, 1 }, { 3, 1 }, { 4, 2 }, { 6, 2 }, { 8, 2 }, { 10, 1 }, { 11, 1 }, { 12, 2 }, { 14, 2 } } },
-        { { { 0, 8 }, { 8, 8 } },
-          { { 0, 6 }, { 6, 2 }, { 8, 8 } },
-          { { 0, 4 }, { 4, 4 }, { 8, 4 }, { 12, 2 }, { 14, 2 } } },
+    static const std::vector<std::vector<int>> F {
+        { F_SYNC, F_TRESILLO, F_OFFBEAT, F_DRIVE, F_GALLOP },  // 1 call & response
+        { F_TRESILLO, F_STAB, F_SYNC },                        // 2 3-3-2 stab
+        { F_ROLL, F_GALLOP, F_DRIVE, F_BROKEN },               // 3 climb
+        { F_ROLL, F_GALLOP, F_OFFBEAT, F_STAB },               // 4 octave jump
+        { F_SYNC, F_DRIVE, F_OFFBEAT },                        // 5 anthem
+        { F_STAB, F_BROKEN, F_GALLOP, F_TRESILLO },            // 6 stutter
+        { F_DRIVE, F_SYNC, F_BROKEN, F_GALLOP },               // 7 arch
+        { F_OFFBEAT, F_GALLOP, F_SYNC, F_ROLL },               // 8 pivot
     };
-    return T[(size_t) clampi (shape - 1, 0, 4)][(size_t) clampi (tier, 0, 2)];
+    return F[(size_t) clampi (shape - 1, 0, 7)];
 }
 
 int autoHookShape (const std::string& style, Rng& R)
 {
-    // weights for: call, stab, climb, octave, anthem
-    std::vector<double> w { .25, .25, .2, .2, .1 };
-    if (style == "Emotional") w = { .4, .05, .2, .0, .35 };
-    else if (style == "Acid") w = { .1, .4, .15, .35, .0 };
-    else if (style == "Hypnotic") w = { .3, .4, .0, .3, .0 };
-    else if (style == "Dark") w = { .3, .3, .0, .4, .0 };
-    else if (style == "Cosmic") w = { .15, .0, .35, .25, .25 };
-    else if (style == "90s Goa") w = { .3, .3, .0, .4, .0 };
-    else if (style == "Modern Goa") w = { .1, .5, .2, .2, .0 };
-    double t = 0;
-    for (double x : w) t += x;
-    double r = R.next() * t;
-    for (size_t i = 0; i < w.size(); ++i) { r -= w[i]; if (r <= 0) return (int) i + 1; }
-    return 1;
+    //                      call stab climb oct anthem stutter arch pivot
+    std::vector<double> w { .20, .20, .15, .15, .05, .10, .10, .05 };
+    if (style == "Emotional") w = { .30, .00, .15, .00, .25, .00, .25, .05 };
+    else if (style == "Acid") w = { .10, .25, .10, .25, .00, .10, .05, .15 };
+    else if (style == "Hypnotic") w = { .15, .20, .00, .20, .00, .20, .05, .20 };
+    else if (style == "Dark") w = { .20, .20, .00, .25, .00, .15, .05, .15 };
+    else if (style == "Cosmic") w = { .10, .00, .25, .15, .20, .00, .25, .05 };
+    else if (style == "90s Goa") w = { .20, .20, .00, .25, .00, .20, .00, .15 };
+    else if (style == "Modern Goa") w = { .10, .30, .15, .10, .00, .15, .10, .10 };
+    return pickWeighted (w, R);
 }
 
 std::vector<int> hookDegrees (int shape, int N, int bar, bool closed, int n, double mv, Rng& R,
@@ -654,7 +828,7 @@ std::vector<int> hookDegrees (int shape, int N, int bar, bool closed, int n, dou
             for (int i = 0; i < N; ++i)
             {
                 if (bar == 0) d[(size_t) i] = start + (int) std::lround ((peak - start) * std::pow (t (i), 0.8));
-                else d[(size_t) i] = (peak - 1) + (int) std::lround ((0 - (peak - 1)) * t (i)); // fall home; open ending set below
+                else d[(size_t) i] = (peak - 1) + (int) std::lround ((0 - (peak - 1)) * t (i));
             }
             if (N > 3 && R.chance (.35 + .3 * mv)) { const int k = R.ri (1, N - 2); d[(size_t) k] += pickI (R, { -1, 1 }); }
             break;
@@ -680,12 +854,26 @@ std::vector<int> hookDegrees (int shape, int N, int bar, bool closed, int n, dou
             int strong = 0, k = 0;
             for (int i = 0; i < N; ++i)
             {
-                if (i == 0 || i % 2 == 0) d[(size_t) i] = (strong++ % 2 == 0) ? start : start + n;
+                if (i % 2 == 0) d[(size_t) i] = (strong++ % 2 == 0) ? start : start + n;
                 else d[(size_t) i] = tail[(size_t) (k++ % (int) tail.size())];
             }
             break;
         }
-        default: // anthem: long notes, wide intervals
+        case 6: // stutter: every note is played twice, the pairs step up, the answer steps down
+            for (int i = 0; i < N; ++i)
+                d[(size_t) i] = bar == 0 ? start + cell[(size_t) ((i / 2) % 3)] / 2 + (i / 2) : peak - 1 - (i / 2);
+            break;
+        case 7: // arch: up and over, one peak in the middle, the answer is a lower arch
+            for (int i = 0; i < N; ++i)
+                d[(size_t) i] = start + (int) std::lround (std::sin (3.14159265 * t (i)) * (bar == 0 ? peak - start : peak - start - 2));
+            break;
+        case 8: // pivot: swings between a home note and a higher one, each swing a step higher
+        {
+            const int hi = clampi (cell[0], 2, 4) + 0;
+            for (int i = 0; i < N; ++i) d[(size_t) i] = (i % 2 == 0 ? start : start + hi) + (bar == 0 ? i / 4 : -(i / 4));
+            break;
+        }
+        default: // 5 anthem: long notes, wide intervals
             if (bar == 0)
                 for (int i = 0; i < N; ++i) d[(size_t) i] = i == 0 ? start : cell[0] - (i - 1);
             else
@@ -696,12 +884,20 @@ std::vector<int> hookDegrees (int shape, int N, int bar, bool closed, int n, dou
     return d;
 }
 
-std::vector<Step> genHook (const Params& p, int& shapeOut, std::vector<int>& motifOut, std::vector<std::string>& formOut,
-                           int spb, int bars, int n, const std::vector<int>& sc, int base, Rng& R)
+std::vector<int> onsetList (const Groove& g)
 {
-    const int shape = (p.hookShape >= 1 && p.hookShape <= 5) ? p.hookShape : autoHookShape (p.style, R);
+    std::vector<int> o;
+    for (size_t i = 0; i < g.k.size(); ++i) if (g.k[i] != '.') o.push_back ((int) i);
+    return o;
+}
+
+std::vector<Step> genHook (const Params& p, const StyleProfile& st, int& shapeOut, int& grooveOut, std::vector<int>& motifOut,
+                           std::vector<std::string>& formOut, int spb, int bars, int n, const std::vector<int>& sc, int base, Rng& R)
+{
+    const int shape = (p.hookShape >= 1 && p.hookShape <= 8) ? p.hookShape : autoHookShape (p.style, R);
     shapeOut = shape;
-    const int tier = p.density < .35 ? 0 : p.density < .7 ? 1 : 2;
+    int tier = p.density < .35 ? 0 : p.density < .7 ? 1 : 2;
+    if (shape == 5) tier = 0;
     const double mv = p.movement;
 
     const int start = shape == 4 ? pickI (R, { 0, 0, -n }) : pickI (R, { 0, 0, 2, -3 });
@@ -712,25 +908,38 @@ std::vector<Step> genHook (const Params& p, int& shapeOut, std::vector<int>& mot
     const std::vector<int> tail = pickRef (R, std::vector<std::vector<int>> { { n - 1, n - 3 }, { n + 2, n }, { 4, 3 }, { n - 1, 4 }, { n - 2, n - 3 } });
     const int climbStep = pickI (R, { 1, 2 });
 
-    const auto& rhythm = hookRhythm (shape, tier);
-    std::vector<HNote> closedRhythm = rhythm;
-    if (closedRhythm.size() > 2 && R.chance (.5)) // final ending: merge the last two notes into one long note
+    // rhythm: statement groove, an answer that keeps the first three beats and gets a new tag, a closing bar that rings out
+    Groove G1 = makeGroove (p, st, 0, spb, R, -1, 0, &hookFamilies (shape), tier);
+    grooveOut = G1.id;
+    Groove G2 = G1;
+    for (int tries = 0; tries < 4 && G2.k == G1.k; ++tries) G2 = withFill (G1, spb, .9, .4, R);
+    Groove G3 = G2;
     {
-        closedRhythm[closedRhythm.size() - 2].dur += closedRhythm.back().dur;
-        closedRhythm.pop_back();
+        const auto o = onsetList (G3);
+        if (! o.empty())
+        {
+            G3.k[(size_t) o.back()] = 'L';
+            if (o.size() > 3 && R.chance (.6)) G3.k[(size_t) o[o.size() - 2]] = '.'; // fewer notes: a clear, long ending
+        }
     }
-    const auto D0 = hookDegrees (shape, (int) rhythm.size(), 0, bars == 1, n, mv, R, start, peak, cell, tail, climbStep);
-    const auto Dopen = hookDegrees (shape, (int) rhythm.size(), 1, false, n, mv, R, start, peak, cell, tail, climbStep);
-    const auto Dclosed = hookDegrees (shape, (int) closedRhythm.size(), 1, true, n, mv, R, start, peak, cell, tail, climbStep);
+    const int N1 = (int) onsetList (G1).size(), N2 = (int) onsetList (G2).size(), N3 = (int) onsetList (G3).size();
+    const auto D0 = hookDegrees (shape, N1, 0, bars == 1, n, mv, R, start, peak, cell, tail, climbStep);
+    const auto Dopen = hookDegrees (shape, N2, 1, false, n, mv, R, start, peak, cell, tail, climbStep);
+    const auto Dclosed = hookDegrees (shape, N3, 1, true, n, mv, R, start, peak, cell, tail, climbStep);
     motifOut.assign (D0.begin(), D0.begin() + std::min<size_t> (6, D0.size()));
+    const int seqStep = pickI (R, { 2, -2, 3 });
 
-    // bar labels: H1 = statement, H2 = open answer, H3 = closed answer
+    // bar labels: H1 statement, H2 open answer, H3 closed answer, H4/H5 the same, sequenced to another pitch
     formOut.clear();
     for (int b = 0; b < bars; ++b)
     {
+        const bool second = bars >= 8 && (b / 4) % 2 == 1;
+        const int ph = b % 4;
         if (bars == 1) formOut.push_back ("H1");
-        else if (b % 2 == 0) formOut.push_back ("H1");
-        else formOut.push_back ((b % 4 == 3 || bars == 2) ? "H3" : "H2");
+        else if (bars == 2) formOut.push_back (b == 0 ? "H1" : "H3");
+        else if (b == bars - 1) formOut.push_back ("H3");
+        else if (ph == 0 || ph == 2) formOut.push_back (second ? "H4" : "H1");
+        else formOut.push_back (second ? "H5" : "H2");
     }
 
     const PcSet tonic = chordPcs (tonicChord (p, sc));
@@ -738,31 +947,34 @@ std::vector<Step> genHook (const Params& p, int& shapeOut, std::vector<int>& mot
     for (int b = 0; b < bars; ++b)
     {
         const std::string& l = formOut[(size_t) b];
-        const auto& rh = l == "H3" ? closedRhythm : rhythm;
-        const auto& dg = l == "H1" ? D0 : l == "H2" ? Dopen : Dclosed;
-        for (size_t k = 0; k < rh.size(); ++k)
+        const Groove& g = l == "H3" ? G3 : (l == "H2" || l == "H5") ? G2 : G1;
+        const auto& dg = l == "H3" ? Dclosed : (l == "H2" || l == "H5") ? Dopen : D0;
+        const int shift = (l == "H4" || l == "H5") ? seqStep : 0;
+        const auto o = onsetList (g);
+        for (size_t k = 0; k < o.size() && k < dg.size(); ++k)
         {
-            const int idx = b * spb + rh[k].pos * spb / 16;
-            Step& s = steps[(size_t) idx];
-            if (s.on) continue;
+            Step& s = steps[(size_t) (b * spb + o[k])];
             s.on = true;
-            s.note = degToMidi (dg[k], sc, base);
-            const bool downbeat = rh[k].pos == 0, last = k + 1 == rh.size();
-            if (shape != 4 && (downbeat || (last && l != "H1")) && R.chance (.85)) s.note = nearestChordTone (s.note, tonic);
-            s.vel = rh[k].pos % 4 == 0 ? 108 : 92;
-            s.len = std::max (1, rh[k].dur * spb / 16) * (shape == 2 ? .8 : .92);
+            s.kind = g.k[(size_t) o[k]];
+            s.note = degToMidi (dg[k] + shift, sc, base);
+            const bool strong = o[k] % (spb / 4) == 0 || s.kind == 'X' || s.kind == 'L';
+            const bool last = k + 1 == o.size();
+            if (shape != 4 && ((strong && k == 0) || (last && l != "H1" && l != "H4")) && R.chance (.85)) s.note = nearestChordTone (s.note, tonic);
         }
     }
-    // accent the single peak of every phrase
-    for (int b = 0; b + 1 < bars || b == 0; b += 2)
+    return steps;
+}
+
+// accent the single peak of every phrase (after articulate, which resets accents)
+void accentPeaks (std::vector<Step>& steps, int spb, int bars)
+{
+    for (int b = 0; b < bars; b += 2)
     {
         int best = -1;
         for (int i = b * spb; i < std::min (bars, b + 2) * spb; ++i)
             if (steps[(size_t) i].on && (best < 0 || steps[(size_t) i].note > steps[(size_t) best].note)) best = i;
         if (best >= 0) { steps[(size_t) best].acc = true; steps[(size_t) best].vel = 127; }
-        if (bars == 1) break;
     }
-    return steps;
 }
 
 void weirdify (std::vector<Step>& steps, const Params& p, const PcSet& set, int spbeat, Rng& R)
@@ -803,10 +1015,11 @@ void weirdify (std::vector<Step>& steps, const Params& p, const PcSet& set, int 
 
 void articulate (std::vector<Step>& steps, const Params& p, const StyleProfile& st, int spbeat, int base, Rng& R, int arch)
 {
-    // One articulation for the whole pattern: same gate, same accent groove. That is what makes it sound played, not random.
+    // Each onset gets its length from its role in the groove: staccato 's' is short, 'L' rings to the next note,
+    // 'X' is accented, plain 'x' uses the style's gate. Same role -> same articulation, so it sounds played, not random.
     const int total = (int) steps.size();
     const bool acid = p.mode == Mode::Acid;
-    const double gate = acid ? pickD (R, { .45, .55, .7 }) : st.cells == "long" ? .92 : pickD (R, { .5, .62, .75, .85 });
+    const double gate = acid ? clampd (st.gate + pickD (R, { -.1, 0.0, .1 }), .3, .85) : clampd (st.gate + pickD (R, { -.08, 0.0, .08 }), .3, .98);
     const bool holds = arch == 6 || st.cells == "long";
     const int accMode = R.ri (0, 2); // 0 = downbeats, 1 = off-beat 8ths, 2 = every third note
     const auto ons = onsets (steps);
@@ -817,22 +1030,25 @@ void articulate (std::vector<Step>& steps, const Params& p, const StyleProfile& 
         const int nj = ons[(j + 1) % ons.size()];
         int gap = imod (nj - i, total);
         if (gap == 0) gap = total;
-        const bool accentPos = accMode == 0 ? i % spbeat == 0 : accMode == 1 ? (spbeat > 1 && i % spbeat == spbeat / 2) : j % 3 == 0;
+        const char kind = s.kind;
+        const bool accentPos = kind == 'X' || (accMode == 0 ? i % spbeat == 0 : accMode == 1 ? (spbeat > 1 && i % spbeat == spbeat / 2) : j % 3 == 0);
         if (acid)
         {
             if (! s.pedal && R.chance (st.octJump * (.4 + p.movement))) s.note += s.note > base + 6 ? -12 : 12;
-            s.acc = R.chance (clampd (st.acc * 1.25 * (accentPos ? 1.5 : .7), 0, .9));
-            s.slide = gap == 1 && R.chance (st.slide * 1.4 * (.5 + p.movement));
+            s.acc = kind == 'X' ? R.chance (.8) : R.chance (clampd (st.acc * 1.25 * (accentPos ? 1.5 : .7), 0, .9));
+            s.slide = gap == 1 && kind != 's' && R.chance (st.slide * 1.4 * (.5 + p.movement));
             s.vel = s.acc ? 127 : 92;
         }
         else
         {
             s.acc = false;
-            s.slide = gap == 1 && ! s.pedal && R.chance (st.slide * .25 * (.5 + p.movement));
-            s.vel = accentPos ? 112 : (s.pedal ? 84 : 96);
+            s.slide = gap == 1 && ! s.pedal && kind != 's' && R.chance (st.slide * .25 * (.5 + p.movement));
+            s.vel = kind == 'X' ? 118 : accentPos ? 108 : (s.pedal ? 84 : kind == 's' ? 90 : 96);
         }
         if (s.slide) s.len = 1.1;
-        else if (s.hold || holds) s.len = std::max (.5, std::min (gap, 4) * .9);
+        else if (kind == 's') s.len = std::min (.4, .35 + .05 * gap);
+        else if (kind == 'L' || s.hold) s.len = std::max (.5, std::min (gap, 8) * .95);
+        else if (holds) s.len = std::max (.5, std::min (gap, 4) * .9);
         else s.len = (gap >= 2 ? std::min (gap, 2) : 1) * gate;
     }
 }
@@ -978,8 +1194,13 @@ std::vector<std::string> riffTypeNames()
 }
 std::vector<std::string> hookShapeNames()
 {
-    return { "Auto", "Call & response", "3-3-2 stab", "Climb", "Octave jump", "Anthem" };
+    return { "Auto", "Call & response", "3-3-2 stab", "Climb", "Octave jump", "Anthem", "Stutter", "Arch", "Pivot" };
 }
+std::vector<std::string> grooveFamilyNames()
+{
+    return { "Auto (mix)", "Rolling 16ths", "Gallop", "Off-beat", "Tresillo 3-3-2", "Syncopated", "Staccato stabs", "Driving 8ths", "Broken" };
+}
+
 std::vector<std::string> styleNames()
 {
     std::vector<std::string> v;
@@ -1035,10 +1256,11 @@ Pattern generate (const Params& pIn, uint32_t seed, const std::vector<int>* moti
 {
     Rng R (seed);
     Params p = pIn;
-    if (p.spb != 8 && p.spb != 24) p.spb = 16;
+    if (p.spb != 8 && p.spb != 12 && p.spb != 24) p.spb = 16;
+    if (p.spb != 16) p.mixed = false;
     if (p.bars != 1 && p.bars != 2 && p.bars != 4 && p.bars != 8 && p.bars != 16) p.bars = 2;
     StyleProfile st = styleFor (p.style);
-    if (dna != nullptr) { const double rs = st.regShift; st = *dna; st.regShift = rs; }
+    if (dna != nullptr) { const double rs = st.regShift, gt = st.gate; st = *dna; st.regShift = rs; st.gate = gt; }
     if (p.mode == Mode::Acid)
     {
         st.slide = std::max (st.slide, .25); st.acc = std::max (st.acc, .3); st.octJump = std::max (st.octJump, .2);
@@ -1072,14 +1294,14 @@ Pattern generate (const Params& pIn, uint32_t seed, const std::vector<int>* moti
     if (hook)
     {
         int shape = 1;
-        steps = genHook (p, shape, motif, formUsed, spb, bars, n, sc, base, R);
+        steps = genHook (p, st, shape, pUsed.grooveId, motif, formUsed, spb, bars, n, sc, base, R);
         pUsed.hookShape = shape; // so a 70% mutation keeps the same hook shape
     }
-    else if (p.mode == Mode::Arp) steps = genArp (p, st, spb, bars, form, chords, chordIdx, set, base, R);
+    else if (p.mode == Mode::Arp) steps = genArp (p, st, spb, bars, form, chords, chordIdx, set, base, R, pUsed.grooveId);
     else
     {
         int arch = 2;
-        const auto evs = genMelodic (p, st, motifIn, motif, spb, bars, form, n, pool, R, arch);
+        const auto evs = genMelodic (p, st, motifIn, motif, spb, bars, form, n, pool, R, arch, pUsed.grooveId);
         pUsed.archetype = arch; // a 70% mutation keeps the riff type
         const PcSet tonic = chordPcs (tonicChord (p, sc));
         steps.resize ((size_t) total);
@@ -1088,7 +1310,7 @@ Pattern generate (const Params& pIn, uint32_t seed, const std::vector<int>* moti
             const Ev& e = evs[(size_t) i];
             if (! e.on) continue;
             Step s;
-            s.on = true; s.pedal = e.pedal; s.hold = e.hold;
+            s.on = true; s.pedal = e.pedal; s.hold = e.hold; s.kind = e.kind;
             if (useCh)
             {
                 const Chord& ch = chords[(size_t) chordIdx (i)];
@@ -1097,7 +1319,7 @@ Pattern generate (const Params& pIn, uint32_t seed, const std::vector<int>* moti
                 else
                 {
                     s.note = degToMidi (e.deg + chordOff (ch, p, sc), sc, base);
-                    const bool strong = i % spbeat == 0 || s.hold;
+                    const bool strong = i % spbeat == 0 || s.hold || e.kind == 'X' || e.kind == 'L';
                     const int pc = imod (s.note, 12);
                     const bool avoid = ! pcs[(size_t) pc] && pcs[(size_t) imod (pc - 1, 12)];
                     if (strong || (avoid && R.chance (.7))) s.note = nearestChordTone (s.note, pcs);
@@ -1106,21 +1328,16 @@ Pattern generate (const Params& pIn, uint32_t seed, const std::vector<int>* moti
             else
             {
                 s.note = degToMidi (e.deg, sc, base);
-                const bool strong = i % spbeat == 0 || s.hold;
+                const bool strong = i % spbeat == 0 || s.hold || e.kind == 'X' || e.kind == 'L';
                 if (strong && ! s.pedal && R.chance (.9 - .4 * p.movement)) s.note = nearestChordTone (s.note, tonic);
             }
             steps[(size_t) i] = s;
         }
     }
-    if (hook)
     {
         Params softer = p;
-        softer.weird *= .6; // hooks stay recognisable
+        if (hook) softer.weird *= .6; // hooks stay recognisable
         weirdify (steps, softer, set, spbeat, R);
-    }
-    else
-    {
-        weirdify (steps, p, set, spbeat, R);
         articulate (steps, p, st, spbeat, base, R, pUsed.archetype);
         // bars with the same role in the phrase repeat exactly (same notes, accents, gates)
         for (int b = 1; b < bars; ++b)
@@ -1130,6 +1347,7 @@ Pattern generate (const Params& pIn, uint32_t seed, const std::vector<int>* moti
                     std::copy (steps.begin() + b0 * spb, steps.begin() + (b0 + 1) * spb, steps.begin() + b * spb);
                     break;
                 }
+        if (hook) accentPeaks (steps, spb, bars);
     }
     const int lo = base - (p.mode == Mode::Acid ? 12 : 14), hi = base + (p.mode == Mode::Acid ? 19 : 26);
     for (auto& s : steps)
@@ -1260,11 +1478,24 @@ std::vector<Pattern> generateSet (const Params& p, int count, uint32_t seed, con
             plan.push_back (a);
         }
     }
+    std::vector<int> hplan;
+    if (p.mode == Mode::Hook && p.hookShape == 0)
+    {
+        std::array<int, 9> used {};
+        for (int i = 0; i < count; ++i)
+        {
+            int s = 1, guard = 0;
+            do s = autoHookShape (p.style, R); while (used[(size_t) s] >= 2 && ++guard < 40);
+            ++used[(size_t) s];
+            hplan.push_back (s);
+        }
+    }
     std::vector<const Pattern*> ref = existing;
     for (int i = 0; i < count; ++i)
     {
         Params q = p;
         if (! plan.empty()) q.archetype = plan[(size_t) i];
+        if (! hplan.empty()) q.hookShape = hplan[(size_t) i];
         Pattern best;
         double bestSim = 9;
         for (int attempt = 0; attempt < 5; ++attempt)
@@ -1536,7 +1767,7 @@ std::string serializeParams (const Params& p)
     o << "p.mode " << (int) p.mode << "\n" << "p.root " << p.root << "\n" << "p.scale " << oneLine (p.scale) << "\n"
       << "p.custom " << cu << "\n" << "p.style " << oneLine (p.style) << "\n" << "p.density " << p.density << "\n"
       << "p.movement " << p.movement << "\n" << "p.reg " << p.reg << "\n" << "p.weird " << p.weird << "\n"
-      << "p.bars " << p.bars << "\n" << "p.spb " << p.spb << "\n" << "p.chords " << oneLine (p.chords) << "\n" << "p.hook " << p.hookShape << "\n" << "p.arch " << p.archetype << "\n";
+      << "p.bars " << p.bars << "\n" << "p.spb " << p.spb << "\n" << "p.chords " << oneLine (p.chords) << "\n" << "p.hook " << p.hookShape << "\n" << "p.arch " << p.archetype << "\n" << "p.mixed " << (p.mixed ? 1 : 0) << "\n" << "p.groove " << p.groove << "\n" << "p.gid " << p.grooveId << "\n";
     return o.str();
 }
 static void applyParamLine (const std::string& k, const std::string& v, Params& p)
@@ -1555,8 +1786,11 @@ static void applyParamLine (const std::string& k, const std::string& v, Params& 
         else if (k == "p.bars") p.bars = std::stoi (v);
         else if (k == "p.spb") p.spb = std::stoi (v);
         else if (k == "p.chords") p.chords = v;
-        else if (k == "p.hook") p.hookShape = clampi (std::stoi (v), 0, 5);
+        else if (k == "p.hook") p.hookShape = clampi (std::stoi (v), 0, 8);
         else if (k == "p.arch") p.archetype = clampi (std::stoi (v), 0, 6);
+        else if (k == "p.mixed") p.mixed = v == "1";
+        else if (k == "p.groove") p.groove = clampi (std::stoi (v), 0, 8);
+        else if (k == "p.gid") p.grooveId = clampi (std::stoi (v), -1, 999);
     }
     catch (...) {}
 }
@@ -1651,9 +1885,9 @@ bool deserialize (const std::string& str, Pattern& pat)
         }
     }
     catch (...) { return false; }
-    if (p.spb != 8 && p.spb != 16 && p.spb != 24) return false;
+    if (p.spb != 8 && p.spb != 12 && p.spb != 16 && p.spb != 24) return false;
     if (p.bars < 1 || (int) p.steps.size() != p.spb * p.bars || (int) p.form.size() != p.bars) return false;
     pat = std::move (p);
     return true;
 }
-} // namespace goa
+} // namespace dali
