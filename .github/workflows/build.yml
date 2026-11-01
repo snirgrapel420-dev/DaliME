@@ -6,9 +6,17 @@ on:
 
 jobs:
   engine-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+
+      - name: Locate project
+        shell: bash
+        run: |
+          if [ ! -f CMakeLists.txt ] && [ -f DaliME/CMakeLists.txt ]; then
+            shopt -s dotglob; mv DaliME/* .; fi
+          ls
+
       - name: Engine unit test
         run: g++ -std=c++17 -O2 tests/engine_test.cpp Source/Engine.cpp -o engine_test && ./engine_test
 
@@ -24,7 +32,13 @@ jobs:
             label: macOS
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+
+      - name: Locate project
+        shell: bash
+        run: |
+          if [ ! -f CMakeLists.txt ] && [ -f DaliME/CMakeLists.txt ]; then
+            shopt -s dotglob; mv DaliME/* .; fi
 
       - name: Configure
         shell: bash
@@ -42,17 +56,17 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          cd "build/GoaMelodyEngine_artefacts/Release"
-          codesign --force --deep -s - "VST3/Goa Melody Engine.vst3"
-          codesign --force --deep -s - "AU/Goa Melody Engine.component"
-          codesign --force --deep -s - "Standalone/Goa Melody Engine.app"
+          cd "build/DaliME_artefacts/Release"
+          codesign --force --deep -s - "VST3/DaliME.vst3"
+          codesign --force --deep -s - "AU/DaliME.component"
+          codesign --force --deep -s - "Standalone/DaliME.app"
 
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: GoaMelodyEngine-${{ matrix.label }}
+          name: DaliME-${{ matrix.label }}
           path: |
-            build/GoaMelodyEngine_artefacts/Release/VST3
-            build/GoaMelodyEngine_artefacts/Release/AU
-            build/GoaMelodyEngine_artefacts/Release/Standalone
+            build/DaliME_artefacts/Release/VST3
+            build/DaliME_artefacts/Release/AU
+            build/DaliME_artefacts/Release/Standalone
           if-no-files-found: warn
