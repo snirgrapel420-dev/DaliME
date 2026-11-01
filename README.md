@@ -1,4 +1,4 @@
-# Goa Melody Engine (VST3 / AU)
+# DaliME — MIDI Engine (VST3 / AU) · Dali Audio
 
 מחולל MIDI שיושב בתוך ה־DAW: מוטיב קודם, תווים אחר כך. 5 מצבים (Melody, Acid, Arp, Chords → melody, Hook), 34 סולמות + Custom, 8 סגנונות, Generate → Keep → Mutate, Melody DNA מקובץ MIDI, וסינת' Preview פנימי.
 
@@ -10,7 +10,7 @@
 
 1. פותחים ריפו חדש ב־GitHub ומעלים אליו את כל התיקייה הזו (כולל התיקייה `.github`).
 2. בלשונית **Actions** הבנייה רצה לבד (Windows ו־macOS). לוקח בערך 10–15 דקות.
-3. בסיום, בתחתית עמוד הריצה, תחת **Artifacts**: מורידים `GoaMelodyEngine-Windows` או `GoaMelodyEngine-macOS`.
+3. בסיום, בתחתית עמוד הריצה, תחת **Artifacts**: מורידים `DaliME-Windows` או `DaliME-macOS`.
 
 ## דרך 2: בנייה מקומית
 
@@ -21,7 +21,7 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
 ```
 
-התוצרים: `build/GoaMelodyEngine_artefacts/Release/VST3` (ו־`AU`, `Standalone` ב־Mac).
+התוצרים: `build/DaliME_artefacts/Release/VST3` (ו־`AU`, `Standalone` ב־Mac).
 
 בדיקת המנוע בלבד (בלי JUCE):
 ```
@@ -40,8 +40,8 @@ g++ -std=c++17 -O2 tests/engine_test.cpp Source/Engine.cpp -o engine_test && ./e
 
 ב־Mac, הפלאגין לא חתום אצל Apple, אז פעם אחת בטרמינל:
 ```
-xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/"Goa Melody Engine.vst3"
-xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/Components/"Goa Melody Engine.component"
+xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/"DaliME.vst3"
+xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/Components/"DaliME.component"
 ```
 
 ---
@@ -54,7 +54,7 @@ xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/Components/"Goa Melody E
 Ableton לא מקבל MIDI שיוצא מפלאגין VST3, לכן הפלאגין שולח את התווים לפורט MIDI וירטואלי:
 
 1. **Windows:** מתקינים את **loopMIDI** (חינמי, Tobias Erichsen), פותחים אותו ולוחצים **+** כדי ליצור פורט.
-   **Mac:** אין צורך בשום התקנה. בוחרים בפלאגין את **Goa Melody Engine (virtual port)**.
+   **Mac:** אין צורך בשום התקנה. בוחרים בפלאגין את **DaliME (virtual port)**.
 2. בפלאגין, ב־**MIDI out**, בוחרים את הפורט (אם הוא לא מופיע: **Rescan ports**).
 3. ב־Ableton: **Settings ← Link, Tempo & MIDI**. בשורת הפורט תחת **Input** מדליקים **Track**. תחת **Output** להשאיר כבוי.
 4. בטראק של הסינת': **MIDI From** ← הפורט, **Monitor** ← **In**.
@@ -72,3 +72,9 @@ Ableton לא מקבל MIDI שיוצא מפלאגין VST3, לכן הפלאגין
 - `tests/engine_test.cpp`: בדיקת עומס של המנוע על כל הסולמות, המצבים והסגנונות.
 
 כל 8 המלודיות, ה־Keep וההגדרות נשמרים בתוך פרויקט ה־DAW.
+
+## מה חדש בגרסה זו
+- **Rhythm feel** – בחירת סגנון הקצב: Rolling 16ths, Gallop, Off-beat, Tresillo 3-3-2, Syncopated, Staccato stabs, Driving 8ths, Broken. ב־Auto כל אחד מ־8 הרעיונות מקבל קצב אחר.
+- סינקופות, תווים קצרים (סטקטו) ותווים ארוכים שנמשכים עד התו הבא – משך כל תו נקבע לפי תפקידו בגרוב.
+- **Hook generator v2** – 8 צורות (Call & response, 3-3-2 stab, Climb, Octave jump, Anthem, Stutter, Arch, Pivot). הקצב נבחר מחדש בכל Generate; פתיחה → תשובה עם סיום חדש → סיום סגור על הטוניקה.
+- בחירת הרזולוציה: 1/16, 1/16T, 1/8, **1/8T**, ו־**1/16+1/8** (משכי תווים מעורבים).

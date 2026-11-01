@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(GoaMelodyEngine VERSION 0.1.0 LANGUAGES C CXX)
+project(DaliME VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -14,11 +14,11 @@ FetchContent_Declare(JUCE
   GIT_SHALLOW ON)
 FetchContent_MakeAvailable(JUCE)
 
-juce_add_plugin(GoaMelodyEngine
+juce_add_plugin(DaliME
   COMPANY_NAME "Dali Audio"
   PRODUCT_NAME "DaliME"
-  PLUGIN_MANUFACTURER_CODE Goal
-  PLUGIN_CODE GmE1
+  PLUGIN_MANUFACTURER_CODE Dali
+  PLUGIN_CODE DaME
   FORMATS VST3 AU Standalone
   IS_SYNTH TRUE
   NEEDS_MIDI_INPUT TRUE
@@ -30,17 +30,17 @@ juce_add_plugin(GoaMelodyEngine
   VST3_CATEGORIES Instrument Generator
   AU_MAIN_TYPE kAudioUnitType_MusicDevice)
 
-target_sources(GoaMelodyEngine PRIVATE
+target_sources(DaliME PRIVATE
   Source/Engine.cpp
   Source/PluginProcessor.cpp
   Source/PluginEditor.cpp)
 
-target_compile_definitions(GoaMelodyEngine PUBLIC
+target_compile_definitions(DaliME PUBLIC
   JUCE_WEB_BROWSER=0
   JUCE_USE_CURL=0
   JUCE_VST3_CAN_REPLACE_VST2=0)
 
-target_link_libraries(GoaMelodyEngine
+target_link_libraries(DaliME
   PRIVATE juce::juce_audio_utils juce::juce_audio_processors
   PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_lto_flags juce::juce_recommended_warning_flags)
 
